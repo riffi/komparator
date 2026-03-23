@@ -296,7 +296,7 @@ export async function createModelEntry(input: {
     }
 
     const modelRecord: ModelRecord = {
-      id: `${slugify(providerName)}-${slugify(modelName)}-${slugify(modelVersion) || crypto.randomUUID()}`,
+      id: crypto.randomUUID(),
       providerId: provider.id,
       name: modelName,
       version: modelVersion,
