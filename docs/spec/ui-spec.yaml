@@ -30,6 +30,9 @@ templates:
           - id: main_nav
             purpose: Primary navigation links with icons. In collapsed desktop state only icons remain visible.
             type: main_navigation
+          - id: welcome_overlay
+            purpose: "First-run onboarding overlay shown only once on the first launch. Styled in the same visual language as the experiments empty state. Explains what Komparator is and how the workflow works in 4 short steps. Primary action opens the existing `New experiment` modal immediately, secondary action opens `Models`, tertiary action dismisses the overlay."
+            type: onboarding_overlay
         fullHeight: true
       - id: main
         type: content
@@ -74,6 +77,9 @@ screens:
     blocks:
       - id: list_header
         purpose: "Compact toolbar row: page title 'Experiments' with count of matching items, view mode segmented control (All | By category), title-only search input, sort dropdown, 'Categories' button for inline category management, and 'New experiment' primary button. The new-experiment action opens a lightweight create-only modal; there is no separate edit-experiment screen because experiment and prompt changes are handled inside 'Prompt & settings' on experiment_detail."
+        columns: 12
+      - id: create_experiment_modal
+        purpose: "Lightweight create-only modal focused on the first useful action. By default it shows only the required fields: `Title` and `Prompt text`. Secondary metadata is intentionally hidden from the first step. A small `Advanced settings` disclosure reveals optional `Description`, `Category`, and `Wrapper`. `Change note` is not part of the first create flow and starts empty for the initial prompt version."
         columns: 12
       - id: categories_manager
         purpose: "Modal opened from the toolbar on the experiments page. Lists categories with color, description and experiment count. Supports create, rename, recolor and delete. Delete is disabled when the category is still used by experiments."

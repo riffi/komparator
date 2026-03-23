@@ -1,8 +1,9 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Pencil, Plus, Trash2, X } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { ExperimentListItem } from "@/entities/experiment/model/types";
 import { filterStore } from "@/features/experiment-filters/model/use-experiment-filters";
+import { cn } from "@/shared/lib/cn";
 import { ExperimentsHeader } from "@/widgets/experiments-list/ui/experiments-header";
 import { ExperimentsGrid } from "@/widgets/experiments-list/ui/experiments-grid";
 import {
@@ -34,6 +35,7 @@ const EXPERIMENTS_PAGE_SIZE = 20;
 
 export function ExperimentsPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const query = filterStore((state) => state.query);
   const sort = filterStore((state) => state.sort);
   const [experiments, setExperiments] = useState<ExperimentListItem[]>([]);
@@ -44,6 +46,7 @@ export function ExperimentsPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [showCategories, setShowCategories] = useState(false);
+  const [showAdvancedCreate, setShowAdvancedCreate] = useState(false);
   const [saving, setSaving] = useState(false);
   const [categories, setCategories] = useState<CategoryManagerItem[]>([]);
   const [categoryForm, setCategoryForm] = useState({
@@ -127,6 +130,17 @@ export function ExperimentsPage() {
     };
   }, [query, sort]);
 
+  useEffect(() => {
+    if (searchParams.get("create") === "1") {
+      setShowCreate(true);
+      setSearchParams((current) => {
+        const next = new URLSearchParams(current);
+        next.delete("create");
+        return next;
+      }, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
+
   const onCreateExperiment = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
@@ -142,10 +156,11 @@ export function ExperimentsPage() {
       wrapperId: form.wrapperId || null,
       tags: [],
       promptText: form.promptText,
-      changeNote: form.changeNote.trim(),
+      changeNote: "",
     });
     setSaving(false);
     setShowCreate(false);
+    setShowAdvancedCreate(false);
     setForm({
       title: "",
       description: "",
@@ -211,10 +226,20 @@ export function ExperimentsPage() {
     <div className="space-y-6">
       <ExperimentsHeader
         count={totalExperiments}
-        onCreate={() => setShowCreate(true)}
+        onCreate={() => {
+          setShowAdvancedCreate(false);
+          setShowCreate(true);
+        }}
         onManageCategories={() => setShowCategories(true)}
       />
-      <ExperimentsGrid experiments={experiments} loading={loading} onCreate={() => setShowCreate(true)} />
+      <ExperimentsGrid
+        experiments={experiments}
+        loading={loading}
+        onCreate={() => {
+          setShowAdvancedCreate(false);
+          setShowCreate(true);
+        }}
+      />
       {!loading && experiments.length > 0 && hasMore ? (
         <div className="flex justify-center">
           <Button variant="ghost" onClick={() => void refreshPage(undefined, true)} disabled={loadingMore}>
@@ -233,13 +258,16 @@ export function ExperimentsPage() {
               <div>
                 <h2 className="font-mono text-xl font-semibold text-text">New experiment</h2>
                 <p className="mt-1 text-sm text-muted">
-                  Create the experiment and its first prompt version.
+                  Start with a title and prompt. You can add details later if needed.
                 </p>
               </div>
               <button
                 type="button"
                 className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted transition hover:text-text"
-                onClick={() => setShowCreate(false)}
+                onClick={() => {
+                  setShowCreate(false);
+                  setShowAdvancedCreate(false);
+                }}
                 aria-label="Close dialog"
               >
                 <X className="h-4 w-4" />
@@ -260,88 +288,107 @@ export function ExperimentsPage() {
               </label>
 
               <label className="space-y-2 md:col-span-2">
-                <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
-                  Description
-                </span>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
+                    Prompt text
+                  </span>
+                  <span className="text-xs text-dim">Required</span>
+                </div>
                 <textarea
-                  className="min-h-[88px] w-full rounded-md border border-border/80 bg-code px-3 py-2 text-sm text-text outline-none transition focus:border-primary"
-                  value={form.description}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, description: event.target.value }))
-                  }
-                />
-              </label>
-
-              <label className="space-y-2">
-                <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
-                  Category
-                </span>
-                <Select
-                  wrapperClassName="w-full"
-                  value={form.categoryId}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, categoryId: event.target.value }))
-                  }
-                >
-                  <option value="">No category</option>
-                  {categoryOptions.map((option) => (
-                    <option key={option.id} value={option.id}>
-                      {option.label}
-                    </option>
-                  ))}
-                </Select>
-              </label>
-
-              <label className="space-y-2">
-                <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
-                  Wrapper
-                </span>
-                <Select
-                  wrapperClassName="w-full"
-                  value={form.wrapperId}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, wrapperId: event.target.value }))
-                  }
-                >
-                  <option value="">No wrapper</option>
-                  {wrapperOptions.map((option) => (
-                    <option key={option.id} value={option.id}>
-                      {option.label}
-                    </option>
-                  ))}
-                </Select>
-              </label>
-
-              <label className="space-y-2 md:col-span-2">
-                <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
-                  Prompt text
-                </span>
-                <textarea
-                  className="min-h-[180px] w-full rounded-md border border-border/80 bg-code px-3 py-2 font-mono text-sm text-text outline-none transition focus:border-primary"
+                  className="min-h-[220px] w-full rounded-md border border-border/80 bg-code px-3 py-2 font-mono text-sm text-text outline-none transition focus:border-primary"
                   value={form.promptText}
                   onChange={(event) =>
                     setForm((current) => ({ ...current, promptText: event.target.value }))
                   }
+                  placeholder="Describe the HTML page or UI you want the models to generate..."
                   required
                 />
               </label>
 
-              <label className="space-y-2 md:col-span-2">
-                <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
-                  Change note
-                </span>
-                <Input
-                  value={form.changeNote}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, changeNote: event.target.value }))
-                  }
-                  placeholder="Initial version"
-                />
-              </label>
+              <div className="md:col-span-2">
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-2 text-sm text-muted transition hover:text-text"
+                  onClick={() => setShowAdvancedCreate((current) => !current)}
+                >
+                  <Plus className={cn("h-4 w-4 transition", showAdvancedCreate && "rotate-45")} />
+                  {showAdvancedCreate ? "Hide advanced settings" : "Add details later or open advanced settings"}
+                </button>
+              </div>
+
+              {showAdvancedCreate ? (
+                <>
+                  <label className="space-y-2 md:col-span-2">
+                    <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
+                      Description
+                    </span>
+                    <textarea
+                      className="min-h-[88px] w-full rounded-md border border-border/80 bg-code px-3 py-2 text-sm text-text outline-none transition focus:border-primary"
+                      value={form.description}
+                      onChange={(event) =>
+                        setForm((current) => ({ ...current, description: event.target.value }))
+                      }
+                      placeholder="Optional context about the task, scope, or what you want to compare."
+                    />
+                  </label>
+
+                  <label className="space-y-2">
+                    <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
+                      Category
+                    </span>
+                    <Select
+                      wrapperClassName="w-full"
+                      value={form.categoryId}
+                      onChange={(event) =>
+                        setForm((current) => ({ ...current, categoryId: event.target.value }))
+                      }
+                    >
+                      <option value="">No category</option>
+                      {categoryOptions.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </Select>
+                  </label>
+
+                  <label className="space-y-2">
+                    <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
+                      Wrapper
+                    </span>
+                    <Select
+                      wrapperClassName="w-full"
+                      value={form.wrapperId}
+                      onChange={(event) =>
+                        setForm((current) => ({ ...current, wrapperId: event.target.value }))
+                      }
+                    >
+                      <option value="">No wrapper</option>
+                      {wrapperOptions.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </Select>
+                  </label>
+                </>
+              ) : null}
+
+              <div className="rounded-lg border border-border/80 bg-surface/40 px-4 py-3 text-sm text-muted md:col-span-2">
+                Description, category, wrapper, and future prompt version notes can all be adjusted later from the
+                experiment screen.
+              </div>
             </div>
 
             <div className="mt-5 flex items-center justify-end gap-2">
-              <Button type="button" variant="ghost" onClick={() => setShowCreate(false)}>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  setShowCreate(false);
+                  setShowAdvancedCreate(false);
+                }}
+              >
                 Cancel
               </Button>
               <Button type="submit" disabled={saving}>

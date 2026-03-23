@@ -27,6 +27,8 @@ description: |
   - Side-by-side визуальное сравнение с рейтингом по 10-балльной шкале
   - Категоризация и тегирование экспериментов
   - Экспорт/импорт всех данных (ZIP с JSON внутри)
+  - Welcome/onboarding экран при первом входе
+  - Упрощённый стартовый create-flow для первого эксперимента
 
   Стек: SPA на Vercel, Dexie (IndexedDB), без бэкенда.
 entities:
@@ -132,6 +134,7 @@ entities:
           Опциональная обёртка для копирования промпта. Если не указана,
           в буфер обмена копируется итоговый prompt без wrapper:
           системная HTML-инструкция + исходный prompt_text.
+          В первом create-flow скрыта в advanced settings и не обязательна.
       tags:
         type: json
         label: Теги
@@ -173,7 +176,7 @@ entities:
       change_note:
         type: string
         label: Заметка об изменении
-        description: Что изменилось по сравнению с предыдущей версией
+        description: Что изменилось по сравнению с предыдущей версией. Для самой первой версии эксперимента обычно остаётся пустой и не требуется в initial create-flow.
       created_at:
         type: datetime
         required: true
@@ -703,6 +706,10 @@ read_models:
       rating_history:
         type: array
 behavior_rules:
+  - id: first_run_welcome
+    description: При первом запуске приложения показывается onboarding overlay с кратким объяснением сценария и быстрым действием `Create experiment`. После закрытия повторно не показывается по умолчанию.
+  - id: initial_experiment_minimal_flow
+    description: В initial create-flow обязательны только `experiment.title` и `prompt_version.prompt_text`. `description`, `category_id` и `wrapper_id` остаются опциональными и скрыты за advanced settings; `prompt_version.change_note` для первой версии создаётся пустым.
   - id: delete_model_guard
     description: Локальная модель может быть удалена только если ни один result не ссылается на неё.
   - id: result_model_reassignment
