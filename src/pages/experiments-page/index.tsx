@@ -2,7 +2,6 @@ import { FormEvent, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ExperimentListItem } from "@/entities/experiment/model/types";
 import { ExperimentsHeader } from "@/widgets/experiments-list/ui/experiments-header";
-import { ExperimentsFilters } from "@/widgets/experiments-list/ui/experiments-filters";
 import { ExperimentsGrid } from "@/widgets/experiments-list/ui/experiments-grid";
 import {
   SelectOption,
@@ -17,10 +16,8 @@ import { Input } from "@/shared/ui/input";
 type ExperimentCreateForm = {
   title: string;
   description: string;
-  status: "draft" | "active" | "completed" | "archived";
   categoryId: string;
   wrapperId: string;
-  tags: string;
   promptText: string;
   changeNote: string;
 };
@@ -36,10 +33,8 @@ export function ExperimentsPage() {
   const [form, setForm] = useState<ExperimentCreateForm>({
     title: "",
     description: "",
-    status: "draft" as const,
     categoryId: "",
     wrapperId: "",
-    tags: "",
     promptText: "",
     changeNote: "",
   });
@@ -57,11 +52,6 @@ export function ExperimentsPage() {
       setCategoryOptions(nextCategories);
       setWrapperOptions(nextWrappers);
       setLoading(false);
-      setForm((current) => ({
-        ...current,
-        categoryId: current.categoryId || nextCategories[0]?.id || "",
-        wrapperId: current.wrapperId || nextWrappers[0]?.id || "",
-      }));
     }
   };
 
@@ -90,13 +80,10 @@ export function ExperimentsPage() {
     const experimentId = await createExperimentWithInitialPrompt({
       title: form.title.trim(),
       description: form.description.trim(),
-      status: form.status,
-      categoryId: form.categoryId,
-      wrapperId: form.wrapperId,
-      tags: form.tags
-        .split(",")
-        .map((tag) => tag.trim())
-        .filter(Boolean),
+      status: "draft",
+      categoryId: form.categoryId || null,
+      wrapperId: form.wrapperId || null,
+      tags: [],
       promptText: form.promptText,
       changeNote: form.changeNote.trim(),
     });
@@ -105,10 +92,8 @@ export function ExperimentsPage() {
     setForm({
       title: "",
       description: "",
-      status: "draft",
-      categoryId: categoryOptions[0]?.id || "",
-      wrapperId: wrapperOptions[0]?.id || "",
-      tags: "",
+      categoryId: "",
+      wrapperId: "",
       promptText: "",
       changeNote: "",
     });
@@ -119,7 +104,6 @@ export function ExperimentsPage() {
   return (
     <div className="space-y-6">
       <ExperimentsHeader count={experiments.length} onCreate={() => setShowCreate(true)} />
-      <ExperimentsFilters />
       <ExperimentsGrid experiments={experiments} loading={loading} />
 
       {showCreate ? (
@@ -168,38 +152,6 @@ export function ExperimentsPage() {
 
               <label className="space-y-2">
                 <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
-                  Status
-                </span>
-                <select
-                  className="h-10 w-full rounded-md border border-border/80 bg-code px-3 text-sm text-text outline-none transition focus:border-primary"
-                  value={form.status}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      status: event.target.value as "draft" | "active" | "completed" | "archived",
-                    }))
-                  }
-                >
-                  <option value="draft">Draft</option>
-                  <option value="active">Active</option>
-                  <option value="completed">Completed</option>
-                  <option value="archived">Archived</option>
-                </select>
-              </label>
-
-              <label className="space-y-2">
-                <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
-                  Tags
-                </span>
-                <Input
-                  value={form.tags}
-                  onChange={(event) => setForm((current) => ({ ...current, tags: event.target.value }))}
-                  placeholder="dashboard, charts, responsive"
-                />
-              </label>
-
-              <label className="space-y-2">
-                <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
                   Category
                 </span>
                 <select
@@ -209,7 +161,7 @@ export function ExperimentsPage() {
                     setForm((current) => ({ ...current, categoryId: event.target.value }))
                   }
                 >
-                  {categoryOptions.length === 0 ? <option value="">No categories</option> : null}
+                  <option value="">No category</option>
                   {categoryOptions.map((option) => (
                     <option key={option.id} value={option.id}>
                       {option.label}
@@ -229,7 +181,7 @@ export function ExperimentsPage() {
                     setForm((current) => ({ ...current, wrapperId: event.target.value }))
                   }
                 >
-                  {wrapperOptions.length === 0 ? <option value="">No wrappers</option> : null}
+                  <option value="">No wrapper</option>
                   {wrapperOptions.map((option) => (
                     <option key={option.id} value={option.id}>
                       {option.label}

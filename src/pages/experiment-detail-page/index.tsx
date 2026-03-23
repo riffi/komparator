@@ -18,6 +18,7 @@ import { ExperimentWorkspace, WorkspaceResultItem } from "@/entities/experiment/
 import { cn } from "@/shared/lib/cn";
 import { ratingToneClass } from "@/shared/lib/rating-color";
 import {
+  createPromptVersionEntry,
   createResultEntry,
   loadCategoryOptions,
   loadExperimentWorkspace,
@@ -56,7 +57,9 @@ export function ExperimentDetailPage() {
   const [savingRating, setSavingRating] = useState(false);
   const [showAddResult, setShowAddResult] = useState(false);
   const [savingResult, setSavingResult] = useState(false);
+  const [copyingPrompt, setCopyingPrompt] = useState(false);
   const [savingPromptSettings, setSavingPromptSettings] = useState(false);
+  const [creatingVersion, setCreatingVersion] = useState(false);
   const [categoryOptions, setCategoryOptions] = useState<SelectOption[]>([]);
   const [wrapperOptions, setWrapperOptions] = useState<SelectOption[]>([]);
   const [settingsDraft, setSettingsDraft] = useState({
@@ -65,7 +68,6 @@ export function ExperimentDetailPage() {
     status: "draft" as "draft" | "active" | "completed" | "archived",
     categoryId: "",
     wrapperId: "",
-    tags: "",
     promptText: "",
     changeNote: "",
   });
@@ -155,6 +157,11 @@ export function ExperimentDetailPage() {
   const slotB = visibleResults.find((item) => item.id === slotBId) ?? visibleResults[1] ?? visibleResults[0];
   const activePrompt =
     workspace?.promptVersions.find((item) => item.id === selectedVersionId) ?? workspace?.promptVersions[0];
+  const wrappedPrompt = activePrompt
+    ? workspace?.wrapperTemplate
+      ? workspace.wrapperTemplate.replace("{{prompt}}", activePrompt.promptText)
+      : activePrompt.promptText
+    : "";
 
   useEffect(() => {
     setNotesDraft(selectedResult?.notes ?? "");
@@ -172,15 +179,8 @@ export function ExperimentDetailPage() {
       title: workspace.title,
       description: workspace.description,
       status: workspace.status,
-      categoryId:
-        categoryOptions.find((item) => item.label === workspace.categoryName)?.id ??
-        categoryOptions[0]?.id ??
-        "",
-      wrapperId:
-        wrapperOptions.find((item) => item.label === workspace.wrapperName)?.id ??
-        wrapperOptions[0]?.id ??
-        "",
-      tags: workspace.tags.join(", "),
+      categoryId: workspace.categoryId ?? "",
+      wrapperId: workspace.wrapperId ?? "",
       promptText: activeVersion?.promptText ?? "",
       changeNote: activeVersion?.changeNote ?? "",
     });
@@ -208,12 +208,13 @@ export function ExperimentDetailPage() {
   }
 
   const copyPrompt = async () => {
-    if (!activePrompt) {
+    if (!wrappedPrompt) {
       return;
     }
 
-    const wrapped = workspace.wrapperTemplate.replace("{{prompt}}", activePrompt.promptText);
-    await navigator.clipboard.writeText(wrapped);
+    setCopyingPrompt(true);
+    await navigator.clipboard.writeText(wrappedPrompt);
+    window.setTimeout(() => setCopyingPrompt(false), 1600);
   };
 
   const onSelectResult = (resultId: string) => {
@@ -298,12 +299,9 @@ export function ExperimentDetailPage() {
       title: settingsDraft.title,
       description: settingsDraft.description,
       status: settingsDraft.status,
-      categoryId: settingsDraft.categoryId,
-      wrapperId: settingsDraft.wrapperId,
-      tags: settingsDraft.tags
-        .split(",")
-        .map((tag) => tag.trim())
-        .filter(Boolean),
+      categoryId: settingsDraft.categoryId || null,
+      wrapperId: settingsDraft.wrapperId || null,
+      tags: workspace.tags,
     });
     await updatePromptVersionEntry({
       promptVersionId: activePrompt.id,
@@ -315,6 +313,22 @@ export function ExperimentDetailPage() {
     setSavingPromptSettings(false);
   };
 
+  const onCreatePromptVersion = async () => {
+    setCreatingVersion(true);
+    const nextPromptText = settingsDraft.promptText.trim();
+    const nextChangeNote =
+      settingsDraft.changeNote.trim() || `Forked from v${activePrompt?.versionNumber ?? "?"}`;
+
+    const promptVersionId = await createPromptVersionEntry({
+      experimentId: workspace.id,
+      promptText: nextPromptText,
+      changeNote: nextChangeNote,
+    });
+    await refreshWorkspace();
+    setSelectedVersionId(promptVersionId);
+    setCreatingVersion(false);
+  };
+
   return (
     <div className="overflow-hidden rounded-xl border border-border/80 bg-surface/70 shadow-panel">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/80 px-5 py-4">
@@ -323,9 +337,6 @@ export function ExperimentDetailPage() {
             <h1 className="truncate font-mono text-xl font-semibold tracking-[-0.04em] text-text">
               {workspace.title}
             </h1>
-            <span className="rounded-full bg-primary-soft/50 px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-primary">
-              {workspace.status}
-            </span>
             <span className="inline-flex items-center gap-2 rounded-full bg-white/5 px-2.5 py-1 text-xs text-muted">
               <span className="h-2 w-2 rounded-full" style={{ backgroundColor: workspace.categoryColor }} />
               {workspace.categoryName}
@@ -609,7 +620,14 @@ export function ExperimentDetailPage() {
                   v{version.versionNumber}
                 </button>
               ))}
-              <button type="button" className="rounded-full border border-dashed border-border/80 px-3 py-1.5 font-mono text-xs text-dim transition hover:text-text">+ New version</button>
+              <button
+                type="button"
+                className="rounded-full border border-dashed border-border/80 px-3 py-1.5 font-mono text-xs text-dim transition hover:text-text disabled:opacity-50"
+                onClick={() => void onCreatePromptVersion()}
+                disabled={creatingVersion}
+              >
+                + New version
+              </button>
             </div>
 
             <div className="rounded-lg border border-border/80 bg-code p-4">
@@ -667,6 +685,7 @@ export function ExperimentDetailPage() {
                   label="Wrapper"
                   value={settingsDraft.wrapperId}
                   options={wrapperOptions}
+                  emptyLabel="No wrapper"
                   onChange={(value) =>
                     setSettingsDraft((current) => ({ ...current, wrapperId: value }))
                   }
@@ -675,36 +694,20 @@ export function ExperimentDetailPage() {
                   label="Category"
                   value={settingsDraft.categoryId}
                   options={categoryOptions}
+                  emptyLabel="No category"
                   onChange={(value) =>
                     setSettingsDraft((current) => ({ ...current, categoryId: value }))
                   }
                 />
-                <Field
-                  label="Tags"
-                  value={settingsDraft.tags}
-                  onChange={(value) =>
-                    setSettingsDraft((current) => ({ ...current, tags: value }))
-                  }
-                />
-                <SelectField
-                  label="Status"
-                  value={settingsDraft.status}
-                  options={[
-                    { id: "draft", label: "Draft" },
-                    { id: "active", label: "Active" },
-                    { id: "completed", label: "Completed" },
-                    { id: "archived", label: "Archived" },
-                  ]}
-                  onChange={(value) =>
-                    setSettingsDraft((current) => ({
-                      ...current,
-                      status: value as "draft" | "active" | "completed" | "archived",
-                    }))
-                  }
-                />
                 <div>
                   <div className="mb-1 font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Wrapper preview</div>
-                  <pre className="max-h-[220px] overflow-auto whitespace-pre-wrap rounded-lg border border-border/80 bg-code p-3 font-mono text-xs leading-5 text-muted">{(workspace.wrapperTemplate || "").replace("{{prompt}}", settingsDraft.promptText ?? "")}</pre>
+                  <pre className="max-h-[220px] overflow-auto whitespace-pre-wrap rounded-lg border border-border/80 bg-code p-3 font-mono text-xs leading-5 text-muted">
+                    {settingsDraft.wrapperId
+                      ? settingsDraft.wrapperId === workspace.wrapperId
+                        ? (workspace.wrapperTemplate || "").replace("{{prompt}}", settingsDraft.promptText ?? "")
+                        : "Wrapper preview updates after save."
+                      : settingsDraft.promptText ?? ""}
+                  </pre>
                 </div>
               </div>
             </div>
@@ -731,6 +734,40 @@ export function ExperimentDetailPage() {
             </div>
 
             <div className="mt-5 grid gap-4 md:grid-cols-2">
+              <div className="rounded-lg border border-border/80 bg-code p-4 md:col-span-2">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
+                      Prompt context
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted">
+                      <span className="rounded-full bg-primary-soft/50 px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-primary">
+                        v{activePrompt?.versionNumber ?? "-"}
+                      </span>
+                      <span className="rounded-full bg-white/5 px-2.5 py-1 text-xs text-muted">
+                        Wrapper: {workspace.wrapperName}
+                      </span>
+                    </div>
+                    <p className="mt-3 max-w-2xl text-sm text-muted">
+                      Скопируй wrapped prompt, отправь его во внешний чат с LLM, затем вставь сгенерированный HTML ниже.
+                    </p>
+                  </div>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => void copyPrompt()}>
+                    <Copy className="h-4 w-4" />
+                    {copyingPrompt ? "Copied" : "Copy wrapped prompt"}
+                  </Button>
+                </div>
+
+                <div className="mt-4">
+                  <div className="mb-2 font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
+                    Wrapped prompt preview
+                  </div>
+                  <pre className="max-h-[220px] overflow-auto whitespace-pre-wrap rounded-lg border border-border/80 bg-[#050608] p-3 font-mono text-xs leading-5 text-muted">
+                    {wrappedPrompt || "Select a prompt version first."}
+                  </pre>
+                </div>
+              </div>
+
               <label className="space-y-2">
                 <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
                   Provider
@@ -816,6 +853,7 @@ export function ExperimentDetailPage() {
                   onChange={(event) =>
                     setResultForm((current) => ({ ...current, htmlContent: event.target.value }))
                   }
+                  placeholder="Paste the generated HTML output here"
                   required
                 />
               </label>
@@ -929,11 +967,13 @@ function SelectField({
   label,
   value,
   options,
+  emptyLabel,
   onChange,
 }: {
   label: string;
   value: string;
   options: SelectOption[];
+  emptyLabel?: string;
   onChange: (value: string) => void;
 }) {
   return (
@@ -944,6 +984,7 @@ function SelectField({
         value={value}
         onChange={(event) => onChange(event.target.value)}
       >
+        {emptyLabel ? <option value="">{emptyLabel}</option> : null}
         {options.map((option) => (
           <option key={option.id} value={option.id}>
             {option.label}

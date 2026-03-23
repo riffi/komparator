@@ -2,7 +2,7 @@ docType: ui-spec
 format_version: 0.0.3
 metadata:
   name: komparator
-  description: Side-by-side comparison tool for LLM-generated HTML outputs. Users create experiments with prompts, copy them (wrapped with standardized instructions) into different LLMs, paste back HTML results, rate them 1-10, and compare visually.
+  description: Side-by-side comparison tool for LLM-generated HTML outputs. Users create experiments with prompts, copy them into different LLMs, optionally wrapped with standardized instructions, paste back HTML results, rate them 1-10, and compare visually.
   theme: dark minimal interface, monospace accents for code/prompt areas, clean data-dense layout optimized for technical users
   background: solid dark neutral background
   palette:
@@ -77,7 +77,6 @@ screen_groups:
       - model_form
       - wrappers_list
       - wrapper_form
-      - categories_manage
   - id: analytics
     screens:
       - stats_dashboard
@@ -85,23 +84,20 @@ screens:
   experiments_list:
     blocks:
       - id: list_header
-        purpose: "Top row: page title 'Experiments' (left), search input (center, searches by title/tags/description), 'New experiment' primary button (right)."
-        columns: 12
-      - id: list_filters
-        purpose: "Filter bar: status chips (draft/active/completed/archived, multi-select, colored per palette), category dropdown, tags autocomplete input, sort dropdown (newest/oldest/most results/highest avg rating)."
+        purpose: "Compact toolbar row: page title 'Experiments' with count, view mode segmented control (All | By category), title-only search input, sort dropdown, and 'New experiment' primary button."
         columns: 12
       - id: experiments_grid
-        purpose: "Grid of experiment cards. Responsive: 3 columns desktop, 2 tablet, 1 mobile."
+        purpose: "Content area with two modes. 'All' mode shows one responsive grid of experiment cards. 'By category' mode shows category sections with colored headers and per-category responsive grids."
         columns: 12
         blocks:
           - id: experiment_card
-            purpose: "Repeated card per experiment. Shows: status badge (top-left, colored), title (bold, clickable → experiment_detail), description (2 lines truncated), category badge (colored dot + name), tags (pill list, muted), stats row (number of prompt versions, number of results, avg rating as colored number). Bottom: created date, last updated relative time. Hover: subtle elevation. Click anywhere → experiment_detail."
+            purpose: "Repeated card per experiment. Shows: title (bold, clickable → experiment_detail), description (2 lines truncated), category badge (colored dot + name), stats row (number of prompt versions, number of results, avg rating as colored number). Bottom: created date and last updated relative time. Hover: subtle elevation. Click anywhere → experiment_detail."
     title: Experiments
-    purpose: Main screen. Browse, search, and filter all experiments.
+    purpose: Main screen. Browse experiments either as one list or grouped into category sections.
   experiment_detail:
     blocks:
       - id: experiment_topbar
-        purpose: "Compact top bar: experiment title (bold, left), status badge, category badge. Right side: 'Copy prompt' button (copies current prompt version + wrapper to clipboard, toast confirmation), 'Edit' button (opens experiment_form modal)."
+        purpose: "Compact top bar: experiment title (bold, left), category badge. Right side: 'Copy prompt' button (copies current prompt version to clipboard; if a wrapper is selected, copies wrapped prompt instead, toast confirmation), 'Edit' button (opens experiment_form modal)."
         columns: 12
       - id: experiment_tabs
         purpose: "Tab bar with two tabs: 'Results' (shows count badge with number of results) and 'Prompt & settings'. Results tab active by default. Right side of tab bar (visible only on Results tab): view mode toggle (Single | Side by side), prompt version dropdown (v1/v2/v3), '+ Add result' primary button."
@@ -139,14 +135,14 @@ screens:
             purpose: "Selected version: prompt text in editable monospace textarea (surface-code background, line numbers). Below: change_note (italic, muted text — what changed from previous version). 'Save changes' button appears when text modified."
             columns: 12
           - id: experiment_settings
-            purpose: "Collapsible settings section: description (editable textarea), wrapper selector (dropdown, shows preview of selected wrapper template below in surface-code block), category selector (dropdown with color dots), tags (inline tag editor with autocomplete), status selector (draft/active/completed/archived). Created/updated dates (read-only)."
+            purpose: "Collapsible settings section: description (editable textarea), wrapper selector (dropdown with 'No wrapper' option, shows raw prompt when wrapper is not selected and selected wrapper template preview otherwise), category selector (dropdown with optional empty state / 'No category'). Created/updated dates (read-only)."
             columns: 12
     title: Experiment Detail
     purpose: "Central workspace for one experiment. Two tabs: Results (default, primary workspace) and Prompt & settings (rare editing). Results tab has list+preview layout with single/side-by-side modes."
   experiment_form:
     blocks:
       - id: form_content
-        purpose: "Form fields: title (text input, required), description (textarea), status (select from enum), category (select from categories or create new inline), wrapper (select from wrappers, shows preview of selected wrapper template below), tags (tag input with autocomplete from existing tags)."
+        purpose: "Form fields: title (text input, required), description (textarea), category (optional select from categories or create new inline), wrapper (optional select from wrappers with explicit 'No wrapper' option; shows raw prompt when not selected and wrapper preview when selected). Form remains usable even if categories or wrappers catalogs are empty."
         columns: 12
       - id: form_footer
         purpose: Cancel (closes modal) and Save (validates, saves, navigates to experiment_detail) buttons.
@@ -203,16 +199,6 @@ screens:
         columns: 12
     title: New / Edit Wrapper
     purpose: Full-screen or large modal for editing wrapper template with live preview.
-  categories_manage:
-    blocks:
-      - id: categories_header
-        purpose: Page title 'Categories', 'Add category' button.
-        columns: 12
-      - id: categories_list
-        purpose: "Sortable list of categories. Each row: drag handle, color swatch (clickable → color picker), name (editable inline), description (editable inline), experiment count badge, delete button (disabled if has experiments, tooltip explains). Drag to reorder (updates sort_order)."
-        columns: 12
-    title: Categories
-    purpose: Inline management of experiment categories (accessed from sidebar or settings).
   stats_dashboard:
     blocks:
       - id: stats_summary

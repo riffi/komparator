@@ -8,28 +8,13 @@ type ExperimentCardProps = {
   experiment: ExperimentListItem;
 };
 
-const statusClassMap: Record<ExperimentListItem["status"], string> = {
-  draft: "text-slate-400 bg-white/5",
-  active: "text-primary bg-primary-soft/50",
-  completed: "text-emerald-400 bg-emerald-500/10",
-  archived: "text-zinc-500 bg-white/5",
-};
-
 export function ExperimentCard({ experiment }: ExperimentCardProps) {
   return (
     <Link
       to={`/${appRoutes.experiments}/${experiment.id}`}
-      className="group flex min-h-[236px] flex-col rounded-lg border border-border/80 bg-surface p-5 shadow-panel transition hover:-translate-y-1 hover:border-border hover:bg-raised"
+      className="group flex min-h-[220px] flex-col rounded-lg border border-border/80 bg-surface p-5 shadow-panel transition hover:-translate-y-1 hover:border-border hover:bg-raised"
     >
       <div className="flex items-center justify-between gap-3">
-        <span
-          className={cn(
-            "rounded-full px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.12em]",
-            statusClassMap[experiment.status],
-          )}
-        >
-          {experiment.status}
-        </span>
         <span className="flex items-center gap-2 text-xs text-muted">
           <span
             className="h-2 w-2 rounded-full"
@@ -37,21 +22,11 @@ export function ExperimentCard({ experiment }: ExperimentCardProps) {
           />
           {experiment.categoryName}
         </span>
+        <span className="font-mono text-[11px] text-dim">{experiment.updatedLabel}</span>
       </div>
 
       <h2 className="mt-4 text-base font-semibold text-text">{experiment.title}</h2>
       <p className="mt-2 line-clamp-2 text-sm leading-6 text-muted">{experiment.description}</p>
-
-      <div className="mt-4 flex flex-wrap gap-2">
-        {experiment.tags.map((tag) => (
-          <span
-            key={tag}
-            className="rounded-full bg-primary-soft/30 px-2.5 py-1 font-mono text-[11px] text-muted"
-          >
-            {tag}
-          </span>
-        ))}
-      </div>
 
       <div className="mt-auto border-t border-border/80 pt-4">
         <div className="grid grid-cols-3 gap-3">
@@ -65,7 +40,7 @@ export function ExperimentCard({ experiment }: ExperimentCardProps) {
         </div>
         <div className="mt-4 flex items-center justify-between text-xs text-dim">
           <span>{experiment.createdLabel}</span>
-          <span>{experiment.updatedLabel}</span>
+          <span>{experiment.resultCount} results</span>
         </div>
       </div>
     </Link>

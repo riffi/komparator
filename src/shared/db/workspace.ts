@@ -64,7 +64,9 @@ export async function loadSidebarCategories(): Promise<SidebarCategoryItem[]> {
   const counts = new Map<string, number>();
 
   for (const experiment of experiments) {
-    counts.set(experiment.categoryId, (counts.get(experiment.categoryId) ?? 0) + 1);
+    if (experiment.categoryId) {
+      counts.set(experiment.categoryId, (counts.get(experiment.categoryId) ?? 0) + 1);
+    }
   }
 
   const items = categories
@@ -130,7 +132,7 @@ export async function loadExperimentsList(): Promise<ExperimentListItem[]> {
   }
 
   return experiments.map((experiment) => {
-    const category = categoriesById.get(experiment.categoryId);
+    const category = experiment.categoryId ? categoriesById.get(experiment.categoryId) : undefined;
     const experimentPromptVersions = promptVersionsByExperiment.get(experiment.id) ?? [];
     const experimentResults = experimentPromptVersions.flatMap((item) => resultsByPromptVersion.get(item.id) ?? []);
     const ratedResults = experimentResults.filter((item) => item.rating !== null);
@@ -144,7 +146,7 @@ export async function loadExperimentsList(): Promise<ExperimentListItem[]> {
       description: experiment.description,
       status: experiment.status,
       categoryId: experiment.categoryId,
-      categoryName: category?.name ?? "Unknown",
+      categoryName: category?.name ?? "No category",
       categoryColor: category?.color ?? "#71717a",
       tags: experiment.tags,
       promptCount: experimentPromptVersions.length,
@@ -166,8 +168,8 @@ export async function loadExperimentWorkspace(experimentId: string): Promise<Exp
   }
 
   const [category, wrapper, promptVersions] = await Promise.all([
-    db.categories.get(experiment.categoryId),
-    db.wrappers.get(experiment.wrapperId),
+    experiment.categoryId ? db.categories.get(experiment.categoryId) : Promise.resolve(undefined),
+    experiment.wrapperId ? db.wrappers.get(experiment.wrapperId) : Promise.resolve(undefined),
     db.promptVersions.where("experimentId").equals(experiment.id).sortBy("versionNumber"),
   ]);
 
@@ -222,10 +224,12 @@ export async function loadExperimentWorkspace(experimentId: string): Promise<Exp
     title: experiment.title,
     description: experiment.description,
     status: experiment.status,
-    categoryName: category?.name ?? "Unknown",
+    categoryId: experiment.categoryId,
+    categoryName: category?.name ?? "No category",
     categoryColor: category?.color ?? "#71717a",
     tags: experiment.tags,
-    wrapperName: wrapper?.name ?? "Unknown",
+    wrapperId: experiment.wrapperId,
+    wrapperName: wrapper?.name ?? "No wrapper",
     wrapperTemplate: wrapper?.template ?? "",
     createdAt: experiment.createdAt,
     updatedAt: experiment.updatedAt,
@@ -254,8 +258,8 @@ export async function createExperimentWithInitialPrompt(input: {
   title: string;
   description: string;
   status: ExperimentRecord["status"];
-  categoryId: string;
-  wrapperId: string;
+  categoryId: string | null;
+  wrapperId: string | null;
   tags: string[];
   promptText: string;
   changeNote: string;
@@ -400,8 +404,8 @@ export async function updateExperimentEntry(input: {
   title: string;
   description: string;
   status: ExperimentRecord["status"];
-  categoryId: string;
-  wrapperId: string;
+  categoryId: string | null;
+  wrapperId: string | null;
   tags: string[];
 }) {
   const now = new Date().toISOString();
@@ -432,4 +436,32 @@ export async function updatePromptVersionEntry(input: {
     });
     await db.experiments.update(input.experimentId, { updatedAt: now });
   });
+}
+
+export async function createPromptVersionEntry(input: {
+  experimentId: string;
+  promptText: string;
+  changeNote: string;
+}) {
+  const now = new Date().toISOString();
+
+  const versions = await db.promptVersions.where("experimentId").equals(input.experimentId).toArray();
+  const nextVersionNumber =
+    versions.reduce((max, item) => Math.max(max, item.versionNumber), 0) + 1;
+
+  const promptVersionId = crypto.randomUUID();
+
+  await db.transaction("rw", [db.promptVersions, db.experiments], async () => {
+    await db.promptVersions.add({
+      id: promptVersionId,
+      experimentId: input.experimentId,
+      versionNumber: nextVersionNumber,
+      promptText: input.promptText,
+      changeNote: input.changeNote,
+      createdAt: now,
+    });
+    await db.experiments.update(input.experimentId, { updatedAt: now });
+  });
+
+  return promptVersionId;
 }
