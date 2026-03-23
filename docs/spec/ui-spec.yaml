@@ -28,7 +28,7 @@ templates:
             purpose: Komparator logo/wordmark (left). Monospace or geometric sans font.
             type: logo
           - id: global_actions
-            purpose: "Right side: Export/Import JSON buttons, settings gear icon, theme toggle (dark/light)."
+            purpose: "Right side: Export/Import ZIP backup buttons for the full local database, settings gear icon, theme toggle (dark/light)."
             type: custom
         fixed: true
       - id: sidebar
@@ -83,7 +83,7 @@ screens:
         purpose: "Modal opened from the toolbar on the experiments page. Lists categories with color, description and experiment count. Supports create, rename, recolor and delete. Delete is disabled when the category is still used by experiments."
         columns: 12
       - id: experiments_grid
-        purpose: "Content area with two modes. 'All' mode shows one responsive grid of experiment cards. 'By category' mode shows category sections with colored headers and per-category responsive grids."
+        purpose: "Content area with two modes. 'All' mode shows one responsive grid of experiment cards. 'By category' mode shows category sections with colored headers and per-category responsive grids. If there are no experiments yet, the content area switches to a dedicated onboarding empty state with a short explanation of what experiments are, how the workflow works, and a primary action to create the first experiment."
         columns: 12
         blocks:
           - id: experiment_card

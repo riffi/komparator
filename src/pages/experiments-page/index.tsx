@@ -171,7 +171,7 @@ export function ExperimentsPage() {
         onCreate={() => setShowCreate(true)}
         onManageCategories={() => setShowCategories(true)}
       />
-      <ExperimentsGrid experiments={experiments} loading={loading} />
+      <ExperimentsGrid experiments={experiments} loading={loading} onCreate={() => setShowCreate(true)} />
 
       {showCreate ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
