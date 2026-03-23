@@ -2,7 +2,7 @@ docType: ui-spec
 format_version: 0.0.3
 metadata:
   name: komparator
-  description: Side-by-side comparison tool for LLM-generated HTML outputs. Users create experiments with prompts, copy them into different LLMs, optionally wrapped with standardized instructions, paste back HTML results, rate them 1-10, and compare visually.
+  description: Side-by-side comparison tool for LLM-generated HTML outputs. Users create experiments with prompts, copy them into different LLMs with a built-in HTML-output instruction and an optional wrapper, paste back HTML results, rate them 1-10, and compare visually.
   theme: dark minimal interface, monospace accents for code/prompt areas, clean data-dense layout optimized for technical users
   background: solid dark neutral background
   palette:
@@ -93,13 +93,13 @@ screens:
   experiment_detail:
     blocks:
       - id: experiment_topbar
-        purpose: "Compact top bar: experiment title (bold, left), category badge. Right side: 'Copy prompt' button (copies current prompt version to clipboard; if a wrapper is selected, copies wrapped prompt instead, toast confirmation), 'Edit' button (opens experiment_form modal)."
+        purpose: "Compact top bar: experiment title (bold, left), category badge. Right side: 'Copy prompt' button (copies current prompt version to clipboard together with a built-in instruction to return one self-contained HTML page; if a wrapper is selected, that composed prompt is inserted into the wrapper first, toast confirmation), 'Edit' button (opens experiment_form modal)."
         columns: 12
       - id: experiment_tabs
         purpose: "Tab bar with two tabs: 'Results' (shows count badge with number of results) and 'Prompt & settings'. Results tab active by default. Right side of tab bar (visible only on Results tab): view mode toggle (Single | Side by side), prompt version dropdown (v1/v2/v3), '+ Add result' primary button."
         columns: 12
       - id: add_result_modal
-        purpose: "Modal flow for attaching a result to the current prompt version. The content is organized as three explicit steps on one screen. Step 1: compact prompt block with version, wrapper, copy action and wrapped prompt preview. Step 2: chosen model summary with a 'Choose model' action opening a dedicated chooser modal. Step 3: large HTML output textarea. Optional notes stay collapsed by default below the HTML field. Rating is not collected at this stage; it is set later while reviewing the rendered result."
+        purpose: "Modal flow for attaching a result to the current prompt version. The content is organized as three explicit steps on one screen. Step 1: compact prompt block with version, wrapper, copy action and final clipboard prompt preview. The copied prompt always includes a built-in instruction to return exactly one self-contained HTML page; wrapper is optional and, when present, wraps that final prompt. Step 2: chosen model summary with a 'Choose model' action opening a dedicated chooser modal. Step 3: large HTML output textarea. Optional notes stay collapsed by default below the HTML field. Rating is not collected at this stage; it is set later while reviewing the rendered result."
         columns: 12
       - id: add_result_model_manager
         purpose: "Nested modal opened from Add result. Left side: model catalog list with search by model/provider text and provider filter dropdown. User can choose an existing model from the list. Right side: add-new-model form for creating a new model inline (provider, model name, version, comment). Newly created model becomes immediately selectable for the pending result."
@@ -137,7 +137,7 @@ screens:
             purpose: "Selected version: prompt text in editable monospace textarea (surface-code background, line numbers). Below: change_note (italic, muted text — what changed from previous version). 'Save changes' button appears when text modified."
             columns: 12
           - id: experiment_settings
-            purpose: "Collapsible settings section: description (editable textarea), wrapper selector (dropdown with 'No wrapper' option, shows raw prompt when wrapper is not selected and selected wrapper template preview otherwise), category selector (dropdown with optional empty state / 'No category'). Created/updated dates (read-only)."
+            purpose: "Collapsible settings section: description (editable textarea), wrapper selector (dropdown with 'No wrapper' option, shows the final clipboard prompt with the built-in HTML instruction when wrapper is not selected and the wrapped final prompt preview otherwise), category selector (dropdown with optional empty state / 'No category'). Created/updated dates (read-only)."
             columns: 12
     title: Experiment Detail
     purpose: "Central workspace for one experiment. Two tabs: Results (default, primary workspace) and Prompt & settings (rare editing). Results tab has list+preview layout with single/side-by-side modes."

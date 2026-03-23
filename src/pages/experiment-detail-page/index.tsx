@@ -13,10 +13,12 @@ import {
   Smartphone,
   Tablet,
   Undo2,
+  X,
 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ExperimentWorkspace, WorkspaceResultItem } from "@/entities/experiment/model/types";
 import { cn } from "@/shared/lib/cn";
+import { buildPromptForClipboard } from "@/shared/lib/prompt";
 import { ratingToneClass } from "@/shared/lib/rating-color";
 import {
   createPromptVersionEntry,
@@ -171,10 +173,8 @@ export function ExperimentDetailPage() {
   const activePrompt =
     workspace?.promptVersions.find((item) => item.id === selectedVersionId) ?? workspace?.promptVersions[0];
   const hasResults = visibleResults.length > 0;
-  const wrappedPrompt = activePrompt
-    ? workspace?.wrapperTemplate
-      ? workspace.wrapperTemplate.replace("{{prompt}}", activePrompt.promptText)
-      : activePrompt.promptText
+  const composedPrompt = activePrompt
+    ? buildPromptForClipboard(activePrompt.promptText, workspace?.wrapperTemplate)
     : "";
 
   useEffect(() => {
@@ -257,12 +257,12 @@ export function ExperimentDetailPage() {
   }
 
   const copyPrompt = async () => {
-    if (!wrappedPrompt) {
+    if (!composedPrompt) {
       return;
     }
 
     setCopyingPrompt(true);
-    await navigator.clipboard.writeText(wrappedPrompt);
+    await navigator.clipboard.writeText(composedPrompt);
     window.setTimeout(() => setCopyingPrompt(false), 1600);
   };
 
@@ -800,9 +800,9 @@ export function ExperimentDetailPage() {
                   <pre className="max-h-[220px] overflow-auto whitespace-pre-wrap rounded-lg border border-border/80 bg-code p-3 font-mono text-xs leading-5 text-muted">
                     {settingsDraft.wrapperId
                       ? settingsDraft.wrapperId === workspace.wrapperId
-                        ? (workspace.wrapperTemplate || "").replace("{{prompt}}", settingsDraft.promptText ?? "")
+                        ? buildPromptForClipboard(settingsDraft.promptText ?? "", workspace.wrapperTemplate || "")
                         : "Wrapper preview updates after save."
-                      : settingsDraft.promptText ?? ""}
+                      : buildPromptForClipboard(settingsDraft.promptText ?? "", null)}
                   </pre>
                 </div>
               </div>
@@ -824,9 +824,14 @@ export function ExperimentDetailPage() {
                   Attach HTML output to prompt version v{activePrompt?.versionNumber ?? "-"}.
                 </p>
               </div>
-              <Button type="button" variant="ghost" size="sm" onClick={() => setShowAddResult(false)}>
-                Cancel
-              </Button>
+              <button
+                type="button"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted transition hover:text-text"
+                onClick={() => setShowAddResult(false)}
+                aria-label="Close dialog"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </div>
 
             <div className="mt-5 space-y-4">
@@ -853,7 +858,7 @@ export function ExperimentDetailPage() {
                   Send this prompt to the LLM chat, then come back with the generated HTML.
                 </p>
                 <pre className="mt-3 max-h-[160px] overflow-auto whitespace-pre-wrap rounded-lg border border-border/80 bg-[#050608] p-3 font-mono text-xs leading-5 text-muted">
-                  {wrappedPrompt || "Select a prompt version first."}
+                  {composedPrompt || "Select a prompt version first."}
                 </pre>
               </section>
 
@@ -934,9 +939,14 @@ export function ExperimentDetailPage() {
                   Search the catalog, filter by provider and choose a model for this result.
                 </p>
               </div>
-              <Button type="button" variant="ghost" size="sm" onClick={() => setShowModelManager(false)}>
-                Close
-              </Button>
+              <button
+                type="button"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted transition hover:text-text"
+                onClick={() => setShowModelManager(false)}
+                aria-label="Close dialog"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </div>
 
             <div className="mt-5 grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">

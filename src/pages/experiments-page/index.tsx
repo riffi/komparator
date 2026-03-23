@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { Pencil, Plus, Trash2, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { ExperimentListItem } from "@/entities/experiment/model/types";
 import { ExperimentsHeader } from "@/widgets/experiments-list/ui/experiments-header";
@@ -186,9 +186,14 @@ export function ExperimentsPage() {
                   Create the experiment and its first prompt version.
                 </p>
               </div>
-              <Button type="button" variant="ghost" size="sm" onClick={() => setShowCreate(false)}>
-                Cancel
-              </Button>
+              <button
+                type="button"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted transition hover:text-text"
+                onClick={() => setShowCreate(false)}
+                aria-label="Close dialog"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </div>
 
             <div className="mt-5 grid gap-4 md:grid-cols-2">
@@ -307,9 +312,14 @@ export function ExperimentsPage() {
                   Create, rename, recolor and remove categories without leaving experiments.
                 </p>
               </div>
-              <Button type="button" variant="ghost" size="sm" onClick={() => setShowCategories(false)}>
-                Close
-              </Button>
+              <button
+                type="button"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted transition hover:text-text"
+                onClick={() => setShowCategories(false)}
+                aria-label="Close dialog"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </div>
 
             <div className="mt-5 grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
