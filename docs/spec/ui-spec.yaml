@@ -17,27 +17,18 @@ metadata:
     desktop: ">= 1280px"
 templates:
   app_shell:
-    purpose: Main application shell with collapsible sidebar and top bar
+    purpose: Main application shell with a full-height left sidebar and a content area
     regions:
-      - id: topbar
-        type: static
-        position: top
-        purpose: Narrow top bar with app identity and global actions
-        blocks:
-          - id: logo
-            purpose: Komparator logo/wordmark (left). Monospace or geometric sans font.
-            type: logo
-          - id: global_actions
-            purpose: "Right side: Export/Import ZIP backup buttons for the full local database, settings gear icon, theme toggle (dark/light)."
-            type: custom
-        fixed: true
       - id: sidebar
         type: static
         position: left
-        purpose: Navigation sidebar, collapsible to icon-only on tablet, hidden on mobile (hamburger in topbar)
+        purpose: Navigation sidebar with logo/wordmark at the top. Full-height on desktop, collapsible to a compact icon-only rail, hidden behind a hamburger button on mobile.
         blocks:
+          - id: logo
+            purpose: Komparator logo/wordmark pinned at the top of the sidebar.
+            type: logo
           - id: main_nav
-            purpose: Primary navigation links with icons
+            purpose: Primary navigation links with icons. In collapsed desktop state only icons remain visible.
             type: main_navigation
         fullHeight: true
       - id: main
@@ -58,6 +49,9 @@ navigation:
     - id: nav_stats
       label: Stats
       target: stats_dashboard
+    - id: nav_settings
+      label: Settings
+      target: settings_page
 screen_groups:
   - id: experiments
     screens:
@@ -72,6 +66,9 @@ screen_groups:
   - id: analytics
     screens:
       - stats_dashboard
+  - id: app_settings
+    screens:
+      - settings_page
 screens:
   experiments_list:
     blocks:
@@ -217,3 +214,17 @@ screens:
           mobile: 12
     title: Stats
     purpose: Aggregated statistics across all experiments, models, and ratings.
+  settings_page:
+    blocks:
+      - id: backup_export
+        purpose: "Backup section with explanation and a primary action for exporting the full local database as a ZIP file."
+        columns:
+          default: 6
+          mobile: 12
+      - id: backup_import
+        purpose: "Restore section with explanation and a button for selecting a ZIP backup file. Confirmation happens in a modal before replacing the local database."
+        columns:
+          default: 6
+          mobile: 12
+    title: Settings
+    purpose: Application settings page. Currently used for local backup import/export instead of a global top bar.
