@@ -1,0 +1,3 @@
+- приложение должно использовать react + vite + tailwind
+- spa
+- даные хранить в indexedDB через dexie

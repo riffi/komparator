@@ -1,0 +1,359 @@
+docType: data-spec
+format_version: 0.0.1
+metadata:
+  name: Komparator
+  version: 0.3.0
+  author: ""
+  created_at: 2026-03-23
+  updated_at: 2026-03-23
+  description_short: Side-by-side comparison tool for LLM-generated HTML outputs
+description: |
+  Komparator — инструмент для сравнения результатов работы разных LLM-моделей
+  на одних и тех же промптах.
+
+  Флоу: пользователь создаёт эксперимент с промптом, копирует его (вместе с
+  оверлей-обёрткой) в разные LLM, получает HTML-результаты, вставляет обратно
+  и сравнивает side-by-side визуально.
+
+  Ключевые возможности:
+  - Управление экспериментами с версионностью промптов
+  - Настраиваемые оверлей-обёртки (wrapper) для стандартизации условий
+  - Хранение и рендер HTML-результатов от разных моделей
+  - Детальное описание моделей (провайдер, версия, режим thinking)
+  - Side-by-side визуальное сравнение с рейтингом по 10-балльной шкале
+  - Категоризация и тегирование экспериментов
+  - Экспорт/импорт всех данных (JSON)
+
+  Стек: SPA на Vercel, Dexie (IndexedDB), без бэкенда.
+enums:
+  experiment_status:
+    description: Статус жизненного цикла эксперимента
+    values:
+      - name: draft
+        label: Черновик
+        description: Промпт в процессе подготовки
+      - name: active
+        label: Активный
+        description: Идёт сбор результатов от моделей
+      - name: completed
+        label: Завершён
+        description: Все нужные результаты собраны, выводы сделаны
+      - name: archived
+        label: Архив
+        description: Эксперимент убран из активной работы
+entities:
+  category:
+    label: Категория
+    description: Тематическая группировка экспериментов (landing page, dashboard, game и т.д.)
+    fields:
+      id:
+        type: uuid
+        pk: true
+        default: uuid_generate_v4()
+      name:
+        type: string
+        required: true
+        unique: true
+        label: Название
+        description: "Например: landing page, dashboard, game, form, animation"
+      description:
+        type: string
+        label: Описание
+      color:
+        type: string
+        label: Цвет
+        description: HEX-цвет для визуального различения в UI
+      sort_order:
+        type: integer
+        default: 0
+        label: Порядок сортировки
+      created_at:
+        type: datetime
+        required: true
+        default: now
+  wrapper:
+    label: Обёртка
+    description: |
+      Шаблон-инструкция, которая оборачивает промпт при копировании в LLM.
+      Стандартизирует условия эксперимента (формат ответа, ограничения, стиль).
+      Содержит плейсхолдер {{prompt}} куда подставляется текст промпта.
+    fields:
+      id:
+        type: uuid
+        pk: true
+        default: uuid_generate_v4()
+      name:
+        type: string
+        required: true
+        label: Название
+        description: "Например: Standard HTML, Tailwind CDN, Dark Theme Only"
+      template:
+        type: string
+        required: true
+        label: Шаблон
+        description: |
+          Текст обёртки с плейсхолдером {{prompt}}.
+          Пример: "Respond with a single self-contained HTML file.
+          All CSS and JS inline. No external dependencies.\n\nTask:\n{{prompt}}"
+      is_default:
+        type: boolean
+        default: false
+        label: По умолчанию
+        description: Используется как обёртка по умолчанию для новых экспериментов
+      created_at:
+        type: datetime
+        required: true
+        default: now
+      updated_at:
+        type: datetime
+        required: true
+        default: now
+  experiment:
+    label: Эксперимент
+    description: |
+      Центральная сущность. Объединяет промпт (с версиями),
+      результаты от разных моделей и метаданные.
+    fields:
+      id:
+        type: uuid
+        pk: true
+        default: uuid_generate_v4()
+      title:
+        type: string
+        required: true
+        label: Название
+        description: Краткое название эксперимента
+      description:
+        type: string
+        label: Описание
+        description: Подробное описание цели и ожиданий
+      status:
+        type: experiment_status
+        required: true
+        default: draft
+        label: Статус
+      category_id:
+        type: uuid
+        fk: category.id
+        label: Категория
+      wrapper_id:
+        type: uuid
+        fk: wrapper.id
+        label: Обёртка
+        description: Какой wrapper используется для копирования промпта
+      tags:
+        type: json
+        label: Теги
+        description: Массив строк-тегов для гибкой фильтрации, например ['responsive', 'animation', 'complex']
+      created_at:
+        type: datetime
+        required: true
+        default: now
+      updated_at:
+        type: datetime
+        required: true
+        default: now
+  prompt_version:
+    label: Версия промпта
+    description: |
+      Итеративные версии промпта внутри эксперимента.
+      Результаты привязываются к конкретной версии, чтобы видеть
+      как улучшение промпта влияет на качество.
+    fields:
+      id:
+        type: uuid
+        pk: true
+        default: uuid_generate_v4()
+      experiment_id:
+        type: uuid
+        required: true
+        fk: experiment.id
+        label: Эксперимент
+      version_number:
+        type: integer
+        required: true
+        label: Номер версии
+        description: Автоинкремент внутри эксперимента (1, 2, 3...)
+      prompt_text:
+        type: string
+        required: true
+        label: Текст промпта
+        description: Чистый промпт без обёртки
+      change_note:
+        type: string
+        label: Заметка об изменении
+        description: Что изменилось по сравнению с предыдущей версией
+      created_at:
+        type: datetime
+        required: true
+        default: now
+    unique_constraints:
+      - - experiment_id
+        - version_number
+  provider:
+    label: Провайдер
+    description: Компания-разработчик LLM (OpenAI, Anthropic, Google и т.д.)
+    fields:
+      id:
+        type: uuid
+        pk: true
+        default: uuid_generate_v4()
+      name:
+        type: string
+        required: true
+        unique: true
+        label: Название
+        description: "Например: OpenAI, Anthropic, Google, Meta, xAI, Mistral"
+      color:
+        type: string
+        label: Цвет
+        description: HEX-цвет бренда провайдера для UI
+      icon:
+        type: string
+        label: Иконка
+        description: URL или data-URI иконки/логотипа провайдера
+      is_active:
+        type: boolean
+        default: true
+        label: Активен
+        description: Показывать ли провайдера в списке выбора
+      created_at:
+        type: datetime
+        required: true
+        default: now
+  llm_model:
+    label: LLM-модель
+    description: |
+      Конкретная конфигурация модели, используемая в эксперименте.
+      Разделена на: провайдер → название модели → версия → режим работы.
+      Одна и та же модель с разными настройками thinking — это разные записи.
+    fields:
+      id:
+        type: uuid
+        pk: true
+        default: uuid_generate_v4()
+      provider_id:
+        type: uuid
+        required: true
+        fk: provider.id
+        label: Провайдер
+      name:
+        type: string
+        required: true
+        label: Название модели
+        description: "Базовое имя модели. Например: Claude Opus, GPT, Gemini Pro"
+      version:
+        type: string
+        required: true
+        label: Версия модели
+        description: "Конкретная версия/релиз. Например: 4o, 4.5, 2.5, 3.5 Sonnet"
+      comment:
+        type: string
+        label: Комментарий
+        description: |
+          Свободное описание конфигурации: режим thinking (on/off),
+          уровень thinking (low/medium/high), температура,
+          особые настройки. Например: "thinking high", "no thinking, temp 0.7"
+      is_active:
+        type: boolean
+        default: true
+        label: Активна
+        description: Показывать ли модель в списке выбора
+      created_at:
+        type: datetime
+        required: true
+        default: now
+    unique_constraints:
+      - - provider_id
+        - name
+        - version
+        - comment
+  result:
+    label: Результат
+    description: |
+      HTML-код, полученный от LLM-модели в ответ на промпт.
+      Привязан к конкретной версии промпта и конкретной модели.
+      Поддерживает несколько попыток (attempt) для одной и той же
+      комбинации промпт + модель — для сравнения стабильности генерации.
+      Содержит рейтинг (голосование) от пользователя.
+    fields:
+      id:
+        type: uuid
+        pk: true
+        default: uuid_generate_v4()
+      prompt_version_id:
+        type: uuid
+        required: true
+        fk: prompt_version.id
+        label: Версия промпта
+      llm_model_id:
+        type: uuid
+        required: true
+        fk: llm_model.id
+        label: Модель
+      attempt:
+        type: integer
+        required: true
+        default: 1
+        label: Попытка
+        description: Номер попытки генерации (1, 2, 3...). Автоинкремент внутри пары промпт+модель
+      html_content:
+        type: string
+        required: true
+        label: HTML-код
+        description: Полный HTML-код, полученный от модели
+      rating:
+        type: integer
+        label: Рейтинг
+        description: Оценка пользователя по 10-балльной шкале (1-10). Null если ещё не оценено
+      notes:
+        type: string
+        label: Заметки
+        description: Свободные заметки к результату (что понравилось, что нет, баги)
+      file_size_bytes:
+        type: integer
+        label: Размер файла
+        description: Размер HTML в байтах (вычисляется автоматически)
+      line_count:
+        type: integer
+        label: Количество строк
+        description: Число строк в HTML (вычисляется автоматически)
+      created_at:
+        type: datetime
+        required: true
+        default: now
+    unique_constraints:
+      - - prompt_version_id
+        - llm_model_id
+        - attempt
+relations:
+  - entity_a: category
+    entity_b: experiment
+    cardinality: one_to_many
+    label: groups
+    description: Категория группирует множество экспериментов
+  - entity_a: wrapper
+    entity_b: experiment
+    cardinality: one_to_many
+    label: wraps
+    description: Одна обёртка может использоваться во многих экспериментах
+  - entity_a: experiment
+    entity_b: prompt_version
+    cardinality: one_to_many
+    label: has versions
+    description: Эксперимент содержит одну или более версий промпта
+  - entity_a: provider
+    entity_b: llm_model
+    cardinality: one_to_many
+    label: offers
+    description: Провайдер предлагает множество моделей
+  - entity_a: prompt_version
+    entity_b: result
+    cardinality: one_to_many
+    label: produces
+    description: Версия промпта порождает результаты от разных моделей
+  - entity_a: llm_model
+    entity_b: result
+    cardinality: one_to_many
+    label: generates
+    description: Модель генерирует результаты для разных промптов

@@ -1,0 +1,242 @@
+docType: ui-spec
+format_version: 0.0.3
+metadata:
+  name: komparator
+  description: Side-by-side comparison tool for LLM-generated HTML outputs. Users create experiments with prompts, copy them (wrapped with standardized instructions) into different LLMs, paste back HTML results, rate them 1-10, and compare visually.
+  theme: dark minimal interface, monospace accents for code/prompt areas, clean data-dense layout optimized for technical users
+  background: solid dark neutral background
+  palette:
+    primary: muted blue — actions, links, active states
+    surface: elevated dark cards with subtle border
+    surface-code: darker inset background for code/prompt/HTML areas
+    accent-provider: "each LLM provider gets a distinct color (Anthropic: coral, OpenAI: green, Google: blue, Meta: purple, xAI: neutral)"
+    rating-scale: gradient from red (1) through yellow (5) to green (10)
+    status-draft: muted gray
+    status-active: blue
+    status-completed: green
+    status-archived: dim gray
+  breakpoints:
+    mobile: < 768px
+    tablet: 768px - 1279px
+    desktop: ">= 1280px"
+templates:
+  app_shell:
+    purpose: Main application shell with collapsible sidebar and top bar
+    regions:
+      - id: topbar
+        type: static
+        position: top
+        purpose: Narrow top bar with app identity and global actions
+        blocks:
+          - id: logo
+            purpose: Komparator logo/wordmark (left). Monospace or geometric sans font.
+            type: logo
+          - id: global_actions
+            purpose: "Right side: Export/Import JSON buttons, settings gear icon, theme toggle (dark/light)."
+            type: custom
+        fixed: true
+      - id: sidebar
+        type: static
+        position: left
+        purpose: Navigation sidebar, collapsible to icon-only on tablet, hidden on mobile (hamburger in topbar)
+        blocks:
+          - id: main_nav
+            purpose: Primary navigation links with icons
+            type: main_navigation
+          - id: category_filter
+            purpose: "Category quick-filter: list of categories with color dots. Click filters experiments list. 'All' option at top."
+            type: custom
+        fullHeight: true
+      - id: main
+        type: content
+        position: center
+default_template: app_shell
+navigation:
+  items:
+    - id: nav_experiments
+      label: Experiments
+      target: experiments_list
+    - id: nav_models
+      label: Models
+      target: models_list
+    - id: nav_wrappers
+      label: Wrappers
+      target: wrappers_list
+    - id: nav_stats
+      label: Stats
+      target: stats_dashboard
+screen_groups:
+  - id: experiments
+    screens:
+      - experiments_list
+      - experiment_detail
+      - experiment_form
+  - id: reference_data
+    screens:
+      - models_list
+      - model_form
+      - wrappers_list
+      - wrapper_form
+      - categories_manage
+  - id: analytics
+    screens:
+      - stats_dashboard
+screens:
+  experiments_list:
+    blocks:
+      - id: list_header
+        purpose: "Top row: page title 'Experiments' (left), search input (center, searches by title/tags/description), 'New experiment' primary button (right)."
+        columns: 12
+      - id: list_filters
+        purpose: "Filter bar: status chips (draft/active/completed/archived, multi-select, colored per palette), category dropdown, tags autocomplete input, sort dropdown (newest/oldest/most results/highest avg rating)."
+        columns: 12
+      - id: experiments_grid
+        purpose: "Grid of experiment cards. Responsive: 3 columns desktop, 2 tablet, 1 mobile."
+        columns: 12
+        blocks:
+          - id: experiment_card
+            purpose: "Repeated card per experiment. Shows: status badge (top-left, colored), title (bold, clickable → experiment_detail), description (2 lines truncated), category badge (colored dot + name), tags (pill list, muted), stats row (number of prompt versions, number of results, avg rating as colored number). Bottom: created date, last updated relative time. Hover: subtle elevation. Click anywhere → experiment_detail."
+    title: Experiments
+    purpose: Main screen. Browse, search, and filter all experiments.
+  experiment_detail:
+    blocks:
+      - id: experiment_topbar
+        purpose: "Compact top bar: experiment title (bold, left), status badge, category badge. Right side: 'Copy prompt' button (copies current prompt version + wrapper to clipboard, toast confirmation), 'Edit' button (opens experiment_form modal)."
+        columns: 12
+      - id: experiment_tabs
+        purpose: "Tab bar with two tabs: 'Results' (shows count badge with number of results) and 'Prompt & settings'. Results tab active by default. Right side of tab bar (visible only on Results tab): view mode toggle (Single | Side by side), prompt version dropdown (v1/v2/v3), '+ Add result' primary button."
+        columns: 12
+      - id: results_tab
+        purpose: "Main workspace tab. Fills remaining viewport height. Master-detail layout: narrow list on left, large preview on right."
+        columns: 12
+        blocks:
+          - id: results_list
+            purpose: "Left panel: scrollable list of results for selected prompt version. Each item shows: provider color dot, model name (bold), version + comment on second line (muted), rating number (colored by rating-scale palette), attempt badge (if >1). Selected item highlighted with left border accent. Click selects result for preview. In side-by-side mode: click assigns to slot A or B (visually marked with A/B labels and distinct left-border colors). Sort control at top: by rating / by model / by date."
+            columns:
+              default: 3
+              mobile: 12
+              tablet: 4
+          - id: results_preview_single
+            purpose: "Right panel: full preview of selected result. Top bar: provider dot + full model name (provider / name / version), comment badge, rating (large clickable number, opens 1-10 popover), file size, line count. Action buttons: 'Code' toggle (switches between iframe and syntax-highlighted HTML view), 'Fullscreen' (renders HTML in fullscreen overlay), 'Notes' toggle (reveals/hides editable notes textarea below), 'Delete' (with confirmation). Main area: sandboxed iframe (srcdoc) rendering the HTML result, takes all available height. Device width simulator: three buttons (mobile 375px / tablet 768px / desktop 100%) resize the iframe container width."
+            columns:
+              default: 9
+              mobile: 12
+              tablet: 8
+          - id: results_preview_sbs
+            purpose: "Right panel splits into two equal-width sub-panels (A and B), separated by a draggable divider. Each sub-panel: compact header with provider dot + model name + rating, action buttons (Code, Fullscreen). Below: sandboxed iframe rendering HTML. Both panels share the same device width simulator (synced). Selecting results from the list assigns them to A (first click) then B (second click). Click again on a listed item to swap it into the most recently active slot."
+            columns:
+              default: 9
+              mobile: 12
+              tablet: 8
+      - id: prompt_settings_tab
+        purpose: Secondary tab (hidden by default). Contains all prompt and experiment configuration. Rarely accessed — user comes here to edit prompt text or change settings, then returns to Results.
+        columns: 12
+        blocks:
+          - id: prompt_versions
+            purpose: "Prompt version selector: horizontal pills (v1, v2, v3...) with '+ New version' button at end. Active version highlighted."
+            columns: 12
+          - id: prompt_editor
+            purpose: "Selected version: prompt text in editable monospace textarea (surface-code background, line numbers). Below: change_note (italic, muted text — what changed from previous version). 'Save changes' button appears when text modified."
+            columns: 12
+          - id: experiment_settings
+            purpose: "Collapsible settings section: description (editable textarea), wrapper selector (dropdown, shows preview of selected wrapper template below in surface-code block), category selector (dropdown with color dots), tags (inline tag editor with autocomplete), status selector (draft/active/completed/archived). Created/updated dates (read-only)."
+            columns: 12
+    title: Experiment Detail
+    purpose: "Central workspace for one experiment. Two tabs: Results (default, primary workspace) and Prompt & settings (rare editing). Results tab has list+preview layout with single/side-by-side modes."
+  experiment_form:
+    blocks:
+      - id: form_content
+        purpose: "Form fields: title (text input, required), description (textarea), status (select from enum), category (select from categories or create new inline), wrapper (select from wrappers, shows preview of selected wrapper template below), tags (tag input with autocomplete from existing tags)."
+        columns: 12
+      - id: form_footer
+        purpose: Cancel (closes modal) and Save (validates, saves, navigates to experiment_detail) buttons.
+        columns: 12
+    title: New / Edit Experiment
+    purpose: Modal dialog for creating or editing experiment metadata.
+  models_list:
+    blocks:
+      - id: models_header
+        purpose: Page title 'Models', search input, 'Add provider' button, 'Add model' primary button.
+        columns: 12
+      - id: providers_section
+        purpose: "Providers displayed as a horizontal row of editable chips/cards. Each: provider color dot, name, model count badge. Click to filter models below. 'Edit' on hover opens inline editing (name, color, icon). Draggable to reorder."
+        columns: 12
+      - id: models_table
+        purpose: "Table of models. Columns: provider (icon + name), model name, version, comment/config, is_active toggle, results count (how many times used), avg rating across all results. Row actions: edit (opens model_form), duplicate (pre-fills form), deactivate toggle. Sortable by any column. Filterable by provider (via chips above)."
+        columns: 12
+    title: Models
+    purpose: Manage LLM providers and models catalog.
+  model_form:
+    blocks:
+      - id: model_form_content
+        purpose: "Form fields: provider (select from existing or create new inline with color picker), model name (text input with autocomplete from existing names), version (text input), comment (textarea, placeholder hints: 'thinking high, temp 0.7, etc.'), is_active toggle."
+        columns: 12
+      - id: model_form_footer
+        purpose: Cancel and Save buttons.
+        columns: 12
+    title: New / Edit Model
+    purpose: Modal dialog for creating or editing a model configuration.
+  wrappers_list:
+    blocks:
+      - id: wrappers_header
+        purpose: Page title 'Wrappers', 'Add wrapper' primary button.
+        columns: 12
+      - id: wrappers_grid
+        purpose: "Grid of wrapper cards. Each: name (bold), 'default' badge if is_default, template text preview (first 3 lines, monospace, surface-code background), usage count (how many experiments use it), updated date. Click → wrapper_form. Actions: duplicate, set as default, delete (with check if used by experiments)."
+        columns: 12
+    title: Wrappers
+    purpose: Manage prompt wrapper templates.
+  wrapper_form:
+    blocks:
+      - id: wrapper_editor
+        purpose: "Left panel: name input (top), template textarea (monospace, large, surface-code background, line numbers). Must contain {{prompt}} placeholder — show validation warning if missing. is_default toggle below."
+        columns:
+          default: 6
+          mobile: 12
+      - id: wrapper_preview
+        purpose: "Right panel: live preview showing how the wrapper will look with a sample prompt substituted into {{prompt}}. Sample prompt is editable. Rendered in monospace, surface-code background. Shows total character count."
+        columns:
+          default: 6
+          mobile: 12
+      - id: wrapper_form_footer
+        purpose: Cancel and Save buttons.
+        columns: 12
+    title: New / Edit Wrapper
+    purpose: Full-screen or large modal for editing wrapper template with live preview.
+  categories_manage:
+    blocks:
+      - id: categories_header
+        purpose: Page title 'Categories', 'Add category' button.
+        columns: 12
+      - id: categories_list
+        purpose: "Sortable list of categories. Each row: drag handle, color swatch (clickable → color picker), name (editable inline), description (editable inline), experiment count badge, delete button (disabled if has experiments, tooltip explains). Drag to reorder (updates sort_order)."
+        columns: 12
+    title: Categories
+    purpose: Inline management of experiment categories (accessed from sidebar or settings).
+  stats_dashboard:
+    blocks:
+      - id: stats_summary
+        purpose: "Top row of metric cards: total experiments, total results, total models used, average rating across all results. Each card shows number + trend indicator."
+        columns: 12
+      - id: model_leaderboard
+        purpose: "Leaderboard table: models ranked by average rating. Columns: rank, provider icon + model name + version, avg rating (colored), number of results rated, win rate (% of times this model had highest rating in an experiment). Sortable."
+        columns:
+          default: 6
+          mobile: 12
+      - id: provider_breakdown
+        purpose: "Bar chart or horizontal stacked bars: rating distribution per provider. X-axis: providers. Y-axis: average rating. Color-coded by provider palette. Shows how many results each provider has."
+        columns:
+          default: 6
+          mobile: 12
+      - id: category_stats
+        purpose: "Table: categories with avg rating per model. Rows: categories. Columns: each active model. Cells: avg rating (colored). Shows which model excels in which category of tasks."
+        columns:
+          default: 6
+          mobile: 12
+      - id: rating_history
+        purpose: "Line chart: average rating over time per model. X-axis: date (experiments created_at). Y-axis: rating 1-10. One line per model (colored by provider). Shows trends — which models are improving/degrading over time."
+        columns:
+          default: 6
+          mobile: 12
+    title: Stats
+    purpose: Aggregated statistics across all experiments, models, and ratings.
