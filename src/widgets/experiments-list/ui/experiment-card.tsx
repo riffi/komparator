@@ -143,7 +143,15 @@ export function ExperimentCard({ experiment }: ExperimentCardProps) {
             )}
           </div>
         </div>
-      ) : null}
+      ) : (
+        <div className="mt-3 hidden rounded-xl border border-dashed border-border/80 bg-code/50 p-4 lg:block">
+          <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-dim">No results yet</div>
+          <div className="mt-2 text-sm font-semibold text-text">This experiment has not been run yet</div>
+          <p className="mt-2 text-sm leading-6 text-muted">
+            Open the experiment, copy the prompt, and add the first HTML result to start comparing models.
+          </p>
+        </div>
+      )}
 
       <div className="mt-auto border-t border-border/80 pt-3">
         <div className="grid grid-cols-3 gap-3">
