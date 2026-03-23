@@ -47,6 +47,7 @@ import {
   updateResultRating,
 } from "@/shared/db/workspace";
 import { Button } from "@/shared/ui/button";
+import { appRoutes } from "@/shared/config/routes";
 import { Select } from "@/shared/ui/select";
 
 const deviceWidths = {
@@ -645,6 +646,14 @@ export function ExperimentDetailPage() {
     <div className="flex min-h-0 flex-1 flex-col gap-4">
       <div className="px-1">
         <div className="min-w-0 flex-1">
+          <button
+            type="button"
+            className="inline-flex items-center gap-2 text-sm text-muted transition hover:text-text"
+            onClick={() => navigate(`/${appRoutes.experiments}`)}
+          >
+            <ChevronLeft className="h-4 w-4" />
+            Back to experiments
+          </button>
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="truncate font-mono text-xl font-semibold tracking-[-0.04em] text-text">
               {workspace.title}
