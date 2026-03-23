@@ -98,6 +98,12 @@ screens:
       - id: experiment_tabs
         purpose: "Tab bar with two tabs: 'Results' (shows count badge with number of results) and 'Prompt & settings'. Results tab active by default. Right side of tab bar (visible only on Results tab): view mode toggle (Single | Side by side), prompt version dropdown (v1/v2/v3), '+ Add result' primary button."
         columns: 12
+      - id: add_result_modal
+        purpose: "Modal flow for attaching a result to the current prompt version. The content is organized as three explicit steps on one screen. Step 1: compact prompt block with version, wrapper, copy action and wrapped prompt preview. Step 2: chosen model summary with a 'Choose model' action opening a dedicated chooser modal. Step 3: large HTML output textarea. Optional notes stay collapsed by default below the HTML field. Rating is not collected at this stage; it is set later while reviewing the rendered result."
+        columns: 12
+      - id: add_result_model_manager
+        purpose: "Nested modal opened from Add result. Left side: model catalog list with search by model/provider text and provider filter dropdown. User can choose an existing model from the list. Right side: add-new-model form for creating a new model inline (provider, model name, version, comment). Newly created model becomes immediately selectable for the pending result."
+        columns: 12
       - id: results_tab
         purpose: "Main workspace tab. Fills the remaining viewport height as a fixed workspace. Master-detail layout: narrow list on left, large preview on right. The page itself should not grow with long result content; scrolling happens inside the results list panel and inside the preview/code panels."
         columns: 12

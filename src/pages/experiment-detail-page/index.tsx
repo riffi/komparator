@@ -1,5 +1,6 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
+  Check,
   Code2,
   Copy,
   Expand,
@@ -20,9 +21,12 @@ import { ratingToneClass } from "@/shared/lib/rating-color";
 import {
   createPromptVersionEntry,
   createResultEntry,
+  createModelEntry,
   loadCategoryOptions,
   loadExperimentWorkspace,
+  loadModelOptions,
   loadWrapperOptions,
+  ModelSelectOption,
   SelectOption,
   updateExperimentEntry,
   updatePromptVersionEntry,
@@ -56,12 +60,16 @@ export function ExperimentDetailPage() {
   const [savingNotes, setSavingNotes] = useState(false);
   const [savingRating, setSavingRating] = useState(false);
   const [showAddResult, setShowAddResult] = useState(false);
+  const [showModelManager, setShowModelManager] = useState(false);
+  const [showResultNotesField, setShowResultNotesField] = useState(false);
   const [savingResult, setSavingResult] = useState(false);
+  const [savingModel, setSavingModel] = useState(false);
   const [copyingPrompt, setCopyingPrompt] = useState(false);
   const [savingPromptSettings, setSavingPromptSettings] = useState(false);
   const [creatingVersion, setCreatingVersion] = useState(false);
   const [categoryOptions, setCategoryOptions] = useState<SelectOption[]>([]);
   const [wrapperOptions, setWrapperOptions] = useState<SelectOption[]>([]);
+  const [modelOptions, setModelOptions] = useState<ModelSelectOption[]>([]);
   const [settingsDraft, setSettingsDraft] = useState({
     title: "",
     description: "",
@@ -71,13 +79,17 @@ export function ExperimentDetailPage() {
     changeNote: "",
   });
   const [resultForm, setResultForm] = useState({
+    modelId: "",
+    htmlContent: "",
+    notes: "",
+  });
+  const [modelSearch, setModelSearch] = useState("");
+  const [modelProviderFilter, setModelProviderFilter] = useState("all");
+  const [modelDraft, setModelDraft] = useState({
     providerName: "",
     modelName: "",
     modelVersion: "",
     modelComment: "",
-    htmlContent: "",
-    rating: "",
-    notes: "",
   });
 
   const refreshWorkspace = useCallback(async () => {
@@ -88,14 +100,16 @@ export function ExperimentDetailPage() {
     }
 
     setLoading(true);
-    const [nextWorkspace, nextCategories, nextWrappers] = await Promise.all([
+    const [nextWorkspace, nextCategories, nextWrappers, nextModels] = await Promise.all([
       loadExperimentWorkspace(experimentId),
       loadCategoryOptions(),
       loadWrapperOptions(),
+      loadModelOptions(),
     ]);
     setWorkspace(nextWorkspace);
     setCategoryOptions(nextCategories);
     setWrapperOptions(nextWrappers);
+    setModelOptions(nextModels);
     setLoading(false);
   }, [experimentId]);
 
@@ -168,6 +182,16 @@ export function ExperimentDetailPage() {
   }, [selectedResult?.id, selectedResult?.notes]);
 
   useEffect(() => {
+    setResultForm((current) => ({
+      ...current,
+      modelId:
+        current.modelId && modelOptions.some((option) => option.id === current.modelId)
+          ? current.modelId
+          : modelOptions[0]?.id ?? "",
+    }));
+  }, [modelOptions]);
+
+  useEffect(() => {
     if (!workspace) {
       return;
     }
@@ -184,6 +208,32 @@ export function ExperimentDetailPage() {
       changeNote: activeVersion?.changeNote ?? "",
     });
   }, [workspace, selectedVersionId, categoryOptions, wrapperOptions]);
+
+  const filteredModelOptions = useMemo(() => {
+    const search = modelSearch.trim().toLowerCase();
+
+    return modelOptions.filter((option) => {
+      const matchesProvider =
+        modelProviderFilter === "all" ? true : option.providerName === modelProviderFilter;
+      const matchesSearch = search
+        ? [option.providerName, option.modelName, option.modelVersion, option.modelComment]
+            .join(" ")
+            .toLowerCase()
+            .includes(search)
+        : true;
+
+      return matchesProvider && matchesSearch;
+    });
+  }, [modelOptions, modelProviderFilter, modelSearch]);
+
+  const providerOptions = useMemo(
+    () => [...new Set(modelOptions.map((option) => option.providerName))].sort((left, right) => left.localeCompare(right)),
+    [modelOptions],
+  );
+
+  const selectedModel = modelOptions.find((option) => option.id === resultForm.modelId);
+  const selectedManagerModel =
+    filteredModelOptions.find((option) => option.id === resultForm.modelId) ?? selectedModel;
 
   if (loading) {
     return (
@@ -257,7 +307,9 @@ export function ExperimentDetailPage() {
   const onCreateResult = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (!activePrompt || !resultForm.providerName.trim() || !resultForm.modelName.trim() || !resultForm.htmlContent.trim()) {
+    const canCreate = activePrompt && resultForm.htmlContent.trim() && resultForm.modelId;
+
+    if (!canCreate) {
       return;
     }
 
@@ -265,26 +317,40 @@ export function ExperimentDetailPage() {
     await createResultEntry({
       experimentId: workspace.id,
       promptVersionId: activePrompt.id,
-      providerName: resultForm.providerName,
-      modelName: resultForm.modelName,
-      modelVersion: resultForm.modelVersion,
-      modelComment: resultForm.modelComment,
+      modelId: resultForm.modelId,
       htmlContent: resultForm.htmlContent,
-      rating: resultForm.rating ? Number(resultForm.rating) : null,
+      rating: null,
       notes: resultForm.notes,
     });
     setSavingResult(false);
     setShowAddResult(false);
+    setShowResultNotesField(false);
     setResultForm({
+      modelId: modelOptions[0]?.id ?? "",
+      htmlContent: "",
+      notes: "",
+    });
+    await refreshWorkspace();
+  };
+
+  const onCreateModel = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!modelDraft.providerName.trim() || !modelDraft.modelName.trim() || !modelDraft.modelVersion.trim()) {
+      return;
+    }
+
+    setSavingModel(true);
+    const modelId = await createModelEntry(modelDraft);
+    const nextModels = await loadModelOptions();
+    setModelOptions(nextModels);
+    setResultForm((current) => ({ ...current, modelId }));
+    setModelDraft({
       providerName: "",
       modelName: "",
       modelVersion: "",
       modelComment: "",
-      htmlContent: "",
-      rating: "",
-      notes: "",
     });
-    await refreshWorkspace();
+    setSavingModel(false);
   };
 
   const onSavePromptSettings = async () => {
@@ -763,141 +829,239 @@ export function ExperimentDetailPage() {
               </Button>
             </div>
 
-            <div className="mt-5 grid gap-4 md:grid-cols-2">
-              <div className="rounded-lg border border-border/80 bg-code p-4 md:col-span-2">
-                <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="mt-5 space-y-4">
+              <section className="rounded-lg border border-border/80 bg-code p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
-                      Prompt context
+                      Step 1
                     </div>
-                    <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted">
-                      <span className="rounded-full bg-primary-soft/50 px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-primary">
+                    <div className="mt-1 text-sm font-semibold text-text">Copy prompt</div>
+                    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted">
+                      <span className="rounded-full bg-primary-soft/50 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-primary">
                         v{activePrompt?.versionNumber ?? "-"}
                       </span>
-                      <span className="rounded-full bg-white/5 px-2.5 py-1 text-xs text-muted">
-                        Wrapper: {workspace.wrapperName}
-                      </span>
+                      <span>{workspace.wrapperName}</span>
                     </div>
-                    <p className="mt-3 max-w-2xl text-sm text-muted">
-                      Скопируй wrapped prompt, отправь его во внешний чат с LLM, затем вставь сгенерированный HTML ниже.
-                    </p>
                   </div>
-                  <Button type="button" variant="ghost" size="sm" onClick={() => void copyPrompt()}>
+                  <Button type="button" variant="ghost" onClick={() => void copyPrompt()}>
                     <Copy className="h-4 w-4" />
-                    {copyingPrompt ? "Copied" : "Copy wrapped prompt"}
+                    {copyingPrompt ? "Copied" : "Copy prompt"}
                   </Button>
                 </div>
+                <p className="mt-3 text-sm text-muted">
+                  Send this prompt to the LLM chat, then come back with the generated HTML.
+                </p>
+                <pre className="mt-3 max-h-[160px] overflow-auto whitespace-pre-wrap rounded-lg border border-border/80 bg-[#050608] p-3 font-mono text-xs leading-5 text-muted">
+                  {wrappedPrompt || "Select a prompt version first."}
+                </pre>
+              </section>
 
-                <div className="mt-4">
-                  <div className="mb-2 font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
-                    Wrapped prompt preview
+              <section className="rounded-lg border border-border/80 bg-code p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
+                      Step 2
+                    </div>
+                    <div className="mt-1 text-sm font-semibold text-text">Choose model</div>
+                    <div className="mt-1 text-xs text-muted">
+                      {selectedModel?.label ?? "No model selected yet."}
+                    </div>
                   </div>
-                  <pre className="max-h-[220px] overflow-auto whitespace-pre-wrap rounded-lg border border-border/80 bg-[#050608] p-3 font-mono text-xs leading-5 text-muted">
-                    {wrappedPrompt || "Select a prompt version first."}
-                  </pre>
+                  <Button type="button" variant="ghost" onClick={() => setShowModelManager(true)}>
+                    <Pencil className="h-4 w-4" />
+                    Choose model
+                  </Button>
                 </div>
-              </div>
+              </section>
 
-              <label className="space-y-2">
-                <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
-                  Provider
-                </span>
-                <InputLike
-                  value={resultForm.providerName}
-                  onChange={(value) => setResultForm((current) => ({ ...current, providerName: value }))}
-                  placeholder="OpenAI"
-                />
-              </label>
-
-              <label className="space-y-2">
-                <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
-                  Model
-                </span>
-                <InputLike
-                  value={resultForm.modelName}
-                  onChange={(value) => setResultForm((current) => ({ ...current, modelName: value }))}
-                  placeholder="GPT"
-                />
-              </label>
-
-              <label className="space-y-2">
-                <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
-                  Model version
-                </span>
-                <InputLike
-                  value={resultForm.modelVersion}
-                  onChange={(value) => setResultForm((current) => ({ ...current, modelVersion: value }))}
-                  placeholder="4o"
-                />
-              </label>
-
-              <label className="space-y-2">
-                <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
-                  Comment
-                </span>
-                <InputLike
-                  value={resultForm.modelComment}
-                  onChange={(value) => setResultForm((current) => ({ ...current, modelComment: value }))}
-                  placeholder="thinking high"
-                />
-              </label>
-
-              <label className="space-y-2">
-                <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
-                  Rating
-                </span>
-                <select
-                  className="h-10 w-full rounded-md border border-border/80 bg-code px-3 text-sm text-text outline-none transition focus:border-primary"
-                  value={resultForm.rating}
-                  onChange={(event) =>
-                    setResultForm((current) => ({ ...current, rating: event.target.value }))
-                  }
-                >
-                  <option value="">Unrated</option>
-                  {Array.from({ length: 10 }, (_, index) => index + 1).map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="space-y-2">
-                <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
-                  Notes
-                </span>
-                <InputLike
-                  value={resultForm.notes}
-                  onChange={(value) => setResultForm((current) => ({ ...current, notes: value }))}
-                  placeholder="Strong visual hierarchy"
-                />
-              </label>
-
-              <label className="space-y-2 md:col-span-2">
-                <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
-                  HTML output
-                </span>
-                <textarea
-                  className="min-h-[260px] w-full rounded-md border border-border/80 bg-code px-3 py-2 font-mono text-sm text-text outline-none transition focus:border-primary"
-                  value={resultForm.htmlContent}
-                  onChange={(event) =>
-                    setResultForm((current) => ({ ...current, htmlContent: event.target.value }))
-                  }
-                  placeholder="Paste the generated HTML output here"
-                  required
-                />
-              </label>
+              <section className="rounded-lg border border-border/80 bg-code p-4">
+                <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
+                  Step 3
+                </div>
+                <div className="mt-1 text-sm font-semibold text-text">Paste HTML output</div>
+                <label className="mt-3 block space-y-2">
+                  <textarea
+                    className="min-h-[260px] w-full rounded-md border border-border/80 bg-[#050608] px-3 py-2 font-mono text-sm text-text outline-none transition focus:border-primary"
+                    value={resultForm.htmlContent}
+                    onChange={(event) =>
+                      setResultForm((current) => ({ ...current, htmlContent: event.target.value }))
+                    }
+                    placeholder="Paste the generated HTML output here"
+                    required
+                  />
+                </label>
+                <div className="mt-3">
+                  <button
+                    type="button"
+                    className="text-sm text-muted transition hover:text-text"
+                    onClick={() => setShowResultNotesField((value) => !value)}
+                  >
+                    {showResultNotesField ? "Hide notes" : "Add notes"}
+                  </button>
+                  {showResultNotesField ? (
+                    <div className="mt-3">
+                      <InputLike
+                        value={resultForm.notes}
+                        onChange={(value) => setResultForm((current) => ({ ...current, notes: value }))}
+                        placeholder="Optional notes"
+                      />
+                    </div>
+                  ) : null}
+                </div>
+              </section>
             </div>
 
             <div className="mt-5 flex items-center justify-end gap-2">
               <Button type="button" variant="ghost" onClick={() => setShowAddResult(false)}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={savingResult}>
+              <Button type="submit" disabled={savingResult || !resultForm.modelId}>
                 Save result
               </Button>
             </div>
           </form>
+        </div>
+      ) : null}
+
+      {showModelManager ? (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4">
+          <div className="w-full max-w-5xl rounded-xl border border-border/80 bg-raised p-5 shadow-panel">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h3 className="font-mono text-xl font-semibold text-text">Choose model</h3>
+                <p className="mt-1 text-sm text-muted">
+                  Search the catalog, filter by provider and choose a model for this result.
+                </p>
+              </div>
+              <Button type="button" variant="ghost" size="sm" onClick={() => setShowModelManager(false)}>
+                Close
+              </Button>
+            </div>
+
+            <div className="mt-5 grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+              <div className="space-y-4">
+                <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
+                  <InputLike value={modelSearch} onChange={setModelSearch} placeholder="Search models..." />
+                  <select
+                    className="h-10 rounded-md border border-border/80 bg-code px-3 text-sm text-text outline-none transition focus:border-primary"
+                    value={modelProviderFilter}
+                    onChange={(event) => setModelProviderFilter(event.target.value)}
+                  >
+                    <option value="all">All providers</option>
+                    {providerOptions.map((provider) => (
+                      <option key={provider} value={provider}>
+                        {provider}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
+                  {filteredModelOptions.length === 0 ? (
+                    <div className="rounded-lg border border-dashed border-border/80 bg-surface/30 px-4 py-8 text-center text-sm text-muted">
+                      No models match the current filters.
+                    </div>
+                  ) : (
+                    filteredModelOptions.map((option) => {
+                      const selected = resultForm.modelId === option.id;
+
+                      return (
+                        <button
+                          key={option.id}
+                          type="button"
+                          className={cn(
+                            "flex w-full items-start gap-3 rounded-lg border px-4 py-3 text-left transition",
+                            selected
+                              ? "border-primary bg-primary-soft/20"
+                              : "border-border/80 bg-surface/40 hover:bg-surface/70",
+                          )}
+                          onClick={() => {
+                            setResultForm((current) => ({ ...current, modelId: option.id }));
+                            setShowModelManager(false);
+                          }}
+                        >
+                          <div className="mt-0.5 text-primary">
+                            <Check className={cn("h-4 w-4", selected ? "opacity-100" : "opacity-0")} />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm font-semibold text-text">{option.label}</div>
+                            <div className="mt-1 text-xs text-muted">{option.providerName}</div>
+                          </div>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              <form className="space-y-4 rounded-lg border border-border/80 bg-surface/50 p-4" onSubmit={onCreateModel}>
+                <div className="font-mono text-xs uppercase tracking-[0.12em] text-dim">Add new model</div>
+                <label className="space-y-2">
+                  <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Provider</span>
+                  <InputLike
+                    value={modelDraft.providerName}
+                    onChange={(value) => setModelDraft((current) => ({ ...current, providerName: value }))}
+                    placeholder="OpenAI"
+                  />
+                </label>
+                <label className="space-y-2">
+                  <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Model</span>
+                  <InputLike
+                    value={modelDraft.modelName}
+                    onChange={(value) => setModelDraft((current) => ({ ...current, modelName: value }))}
+                    placeholder="GPT"
+                  />
+                </label>
+                <label className="space-y-2">
+                  <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Version</span>
+                  <InputLike
+                    value={modelDraft.modelVersion}
+                    onChange={(value) => setModelDraft((current) => ({ ...current, modelVersion: value }))}
+                    placeholder="4o"
+                  />
+                </label>
+                <label className="space-y-2">
+                  <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Comment</span>
+                  <InputLike
+                    value={modelDraft.modelComment}
+                    onChange={(value) => setModelDraft((current) => ({ ...current, modelComment: value }))}
+                    placeholder="thinking high"
+                  />
+                </label>
+                <div className="flex justify-end">
+                  <Button type="submit" disabled={savingModel}>
+                    <Plus className="h-4 w-4" />
+                    Add model
+                  </Button>
+                </div>
+              </form>
+            </div>
+
+            <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-border/80 pt-4">
+              <div className="min-w-0 text-sm text-muted">
+                {selectedManagerModel ? (
+                  <span className="truncate">
+                    Selected: <span className="text-text">{selectedManagerModel.label}</span>
+                  </span>
+                ) : (
+                  "Select a model from the catalog or create a new one."
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <Button type="button" variant="ghost" onClick={() => setShowModelManager(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => setShowModelManager(false)}
+                  disabled={!selectedManagerModel}
+                >
+                  Use selected model
+                </Button>
+              </div>
+            </div>
+          </div>
         </div>
       ) : null}
     </div>

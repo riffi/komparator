@@ -22,6 +22,15 @@ export type SelectOption = {
   label: string;
 };
 
+export type ModelSelectOption = {
+  id: string;
+  label: string;
+  providerName: string;
+  modelName: string;
+  modelVersion: string;
+  modelComment: string;
+};
+
 export type CategoryManagerItem = {
   id: string;
   name: string;
@@ -114,6 +123,94 @@ export async function loadWrapperOptions(): Promise<SelectOption[]> {
     id: wrapper.id,
     label: wrapper.name,
   }));
+}
+
+export async function loadModelOptions(): Promise<ModelSelectOption[]> {
+  const [models, providers] = await Promise.all([db.models.toArray(), db.providers.toArray()]);
+  const providersById = new Map(providers.map((provider) => [provider.id, provider]));
+
+  return [...models]
+    .sort((left, right) => {
+      const leftProvider = providersById.get(left.providerId)?.name ?? "";
+      const rightProvider = providersById.get(right.providerId)?.name ?? "";
+
+      return (
+        leftProvider.localeCompare(rightProvider) ||
+        left.name.localeCompare(right.name) ||
+        left.version.localeCompare(right.version)
+      );
+    })
+    .map((model) => {
+      const providerName = providersById.get(model.providerId)?.name ?? "Unknown";
+      const commentPart = model.comment ? ` • ${model.comment}` : "";
+
+      return {
+        id: model.id,
+        label: `${providerName} / ${model.name} ${model.version}${commentPart}`,
+        providerName,
+        modelName: model.name,
+        modelVersion: model.version,
+        modelComment: model.comment,
+      };
+    });
+}
+
+export async function createModelEntry(input: {
+  providerName: string;
+  modelName: string;
+  modelVersion: string;
+  modelComment: string;
+}) {
+  const now = new Date().toISOString();
+  const providerName = input.providerName.trim();
+  const modelName = input.modelName.trim();
+  const modelVersion = input.modelVersion.trim();
+  const modelComment = input.modelComment.trim();
+
+  const modelId = await db.transaction("rw", [db.providers, db.models], async () => {
+    const providers = await db.providers.toArray();
+    let provider =
+      providers.find((item) => normalizeKey(item.name) === normalizeKey(providerName)) ?? null;
+
+    if (!provider) {
+      const providerRecord: ProviderRecord = {
+        id: slugify(providerName) || crypto.randomUUID(),
+        name: providerName,
+        color: deriveProviderColor(providerName),
+        isActive: true,
+        createdAt: now,
+      };
+      await db.providers.add(providerRecord);
+      provider = providerRecord;
+    }
+
+    const models = await db.models.where("providerId").equals(provider.id).toArray();
+    const existingModel =
+      models.find(
+        (item) =>
+          normalizeKey(item.name) === normalizeKey(modelName) &&
+          normalizeKey(item.version) === normalizeKey(modelVersion) &&
+          normalizeKey(item.comment) === normalizeKey(modelComment),
+      ) ?? null;
+
+    if (existingModel) {
+      return existingModel.id;
+    }
+
+    const modelRecord: ModelRecord = {
+      id: `${slugify(providerName)}-${slugify(modelName)}-${slugify(modelVersion) || crypto.randomUUID()}`,
+      providerId: provider.id,
+      name: modelName,
+      version: modelVersion,
+      comment: modelComment,
+      isActive: true,
+      createdAt: now,
+    };
+    await db.models.add(modelRecord);
+    return modelRecord.id;
+  });
+
+  return modelId;
 }
 
 export async function loadExperimentsList(): Promise<ExperimentListItem[]> {
@@ -326,60 +423,19 @@ function countLines(value: string) {
 export async function createResultEntry(input: {
   experimentId: string;
   promptVersionId: string;
-  providerName: string;
-  modelName: string;
-  modelVersion: string;
-  modelComment: string;
+  modelId: string;
   htmlContent: string;
   rating: number | null;
   notes: string;
 }) {
   const now = new Date().toISOString();
-  const providerName = input.providerName.trim();
-  const modelName = input.modelName.trim();
-  const modelVersion = input.modelVersion.trim();
-  const modelComment = input.modelComment.trim();
   const htmlContent = input.htmlContent.trim();
   const notes = input.notes.trim();
 
   await db.transaction("rw", [db.providers, db.models, db.results, db.experiments], async () => {
-    const providers = await db.providers.toArray();
-    let provider =
-      providers.find((item) => normalizeKey(item.name) === normalizeKey(providerName)) ?? null;
-
-    if (!provider) {
-      const providerRecord: ProviderRecord = {
-        id: slugify(providerName) || crypto.randomUUID(),
-        name: providerName,
-        color: deriveProviderColor(providerName),
-        isActive: true,
-        createdAt: now,
-      };
-      await db.providers.add(providerRecord);
-      provider = providerRecord;
-    }
-
-    const models = await db.models.where("providerId").equals(provider.id).toArray();
-    let model =
-      models.find(
-        (item) =>
-          normalizeKey(item.name) === normalizeKey(modelName) &&
-          normalizeKey(item.version) === normalizeKey(modelVersion) &&
-          normalizeKey(item.comment) === normalizeKey(modelComment),
-      ) ?? null;
-
+    const model = await db.models.get(input.modelId);
     if (!model) {
-      const modelRecord: ModelRecord = {
-        id: `${slugify(providerName)}-${slugify(modelName)}-${slugify(modelVersion) || crypto.randomUUID()}`,
-        providerId: provider.id,
-        name: modelName,
-        version: modelVersion,
-        comment: modelComment,
-        isActive: true,
-        createdAt: now,
-      };
-      await db.models.add(modelRecord);
-      model = modelRecord;
+      throw new Error("Selected model no longer exists.");
     }
 
     const previousAttempts = await db.results
