@@ -32,6 +32,7 @@ export type ModelSelectOption = {
   modelVersion: string;
   modelComment: string;
   isActive: boolean;
+  lastUsedAt: string | null;
 };
 
 export type CategoryManagerItem = {
@@ -219,8 +220,16 @@ export async function loadWrapperOptions(): Promise<SelectOption[]> {
 }
 
 export async function loadModelOptions(): Promise<ModelSelectOption[]> {
-  const [models, providers] = await Promise.all([db.models.toArray(), db.providers.toArray()]);
+  const [models, providers, results] = await Promise.all([db.models.toArray(), db.providers.toArray(), db.results.toArray()]);
   const providersById = new Map(providers.map((provider) => [provider.id, provider]));
+  const lastUsedByModel = new Map<string, string>();
+
+  for (const result of results) {
+    const current = lastUsedByModel.get(result.modelId);
+    if (!current || Date.parse(result.createdAt) > Date.parse(current)) {
+      lastUsedByModel.set(result.modelId, result.createdAt);
+    }
+  }
 
   return [...models]
     .sort((left, right) => {
@@ -247,6 +256,7 @@ export async function loadModelOptions(): Promise<ModelSelectOption[]> {
         modelVersion: model.version,
         modelComment: model.comment,
         isActive: model.isActive,
+        lastUsedAt: lastUsedByModel.get(model.id) ?? null,
       };
     });
 }

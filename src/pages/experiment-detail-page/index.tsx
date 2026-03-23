@@ -47,6 +47,7 @@ import {
   updateResultRating,
 } from "@/shared/db/workspace";
 import { Button } from "@/shared/ui/button";
+import { HtmlCodeBlock } from "@/shared/ui/html-code-block";
 import { appRoutes } from "@/shared/config/routes";
 import { Select } from "@/shared/ui/select";
 
@@ -115,6 +116,7 @@ export function ExperimentDetailPage() {
   });
   const [modelSearch, setModelSearch] = useState("");
   const [modelProviderFilter, setModelProviderFilter] = useState("all");
+  const [modelSort, setModelSort] = useState<"recent" | "name">("recent");
   const [modelDraft, setModelDraft] = useState({
     providerMode: "existing",
     providerId: "",
@@ -301,19 +303,37 @@ export function ExperimentDetailPage() {
   const filteredModelOptions = useMemo(() => {
     const search = modelSearch.trim().toLowerCase();
 
-    return modelOptions.filter((option) => {
-      const matchesProvider =
-        modelProviderFilter === "all" ? true : option.providerName === modelProviderFilter;
-      const matchesSearch = search
-        ? [option.providerName, option.modelName, option.modelVersion, option.modelComment]
-            .join(" ")
-            .toLowerCase()
-            .includes(search)
-        : true;
+    return modelOptions
+      .filter((option) => {
+        const matchesProvider =
+          modelProviderFilter === "all" ? true : option.providerName === modelProviderFilter;
+        const matchesSearch = search
+          ? [option.providerName, option.modelName, option.modelVersion, option.modelComment]
+              .join(" ")
+              .toLowerCase()
+              .includes(search)
+          : true;
 
-      return matchesProvider && matchesSearch;
-    });
-  }, [modelOptions, modelProviderFilter, modelSearch]);
+        return matchesProvider && matchesSearch;
+      })
+      .sort((left, right) => {
+        if (modelSort === "recent") {
+          return (
+            Date.parse(right.lastUsedAt ?? "1970-01-01T00:00:00.000Z") -
+              Date.parse(left.lastUsedAt ?? "1970-01-01T00:00:00.000Z") ||
+            left.providerName.localeCompare(right.providerName) ||
+            left.modelName.localeCompare(right.modelName) ||
+            left.modelVersion.localeCompare(right.modelVersion)
+          );
+        }
+
+        return (
+          left.providerName.localeCompare(right.providerName) ||
+          left.modelName.localeCompare(right.modelName) ||
+          left.modelVersion.localeCompare(right.modelVersion)
+        );
+      });
+  }, [modelOptions, modelProviderFilter, modelSearch, modelSort]);
 
   const providerOptions = useMemo(
     () => [...new Set(modelOptions.map((option) => option.providerName))].sort((left, right) => left.localeCompare(right)),
@@ -1363,7 +1383,7 @@ export function ExperimentDetailPage() {
 
       {showModelManager ? (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4">
-          <div className="w-full max-w-5xl rounded-xl border border-border/80 bg-raised p-5 shadow-panel">
+          <div className="w-full max-w-[1280px] rounded-xl border border-border/80 bg-raised p-5 shadow-panel">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h3 className="font-mono text-xl font-semibold text-text">Choose model</h3>
@@ -1381,9 +1401,9 @@ export function ExperimentDetailPage() {
               </button>
             </div>
 
-            <div className="mt-5 grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+            <div className="mt-5 grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
               <div className="space-y-4">
-                <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
+                <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_160px]">
                   <InputLike value={modelSearch} onChange={setModelSearch} placeholder="Search models..." />
                   <Select
                     wrapperClassName="w-full"
@@ -1396,6 +1416,14 @@ export function ExperimentDetailPage() {
                         {provider}
                       </option>
                     ))}
+                  </Select>
+                  <Select
+                    wrapperClassName="w-full"
+                    value={modelSort}
+                    onChange={(event) => setModelSort(event.target.value as typeof modelSort)}
+                  >
+                    <option value="recent">Recent</option>
+                    <option value="name">Name</option>
                   </Select>
                 </div>
 
@@ -1759,9 +1787,7 @@ function SinglePreviewCanvas({
 }) {
   if (showCode) {
     return (
-      <pre className="overflow-auto whitespace-pre-wrap rounded-lg border border-border/80 bg-[#050608] p-4 font-mono text-xs leading-6 text-muted">
-        {result?.htmlContent ?? "No result selected."}
-      </pre>
+      <HtmlCodeBlock code={result?.htmlContent ?? "No result selected."} />
     );
   }
 
@@ -1873,7 +1899,7 @@ function ComparePanel({ label, result, device, showCode, accent = "blue" }: { la
       </div>
       <div className="min-h-0 flex-1 overflow-auto p-3">
         {showCode ? (
-          <pre className="overflow-auto whitespace-pre-wrap font-mono text-xs leading-6 text-muted">{result.htmlContent}</pre>
+          <HtmlCodeBlock code={result.htmlContent} className="border-0 bg-transparent p-0" />
         ) : (
           <div className="mx-auto h-full min-h-[420px] max-w-full overflow-hidden rounded-lg border border-border/80 bg-white" style={{ width: deviceWidths[device] }}>
             <iframe title={result.id} srcDoc={result.htmlContent} className="h-full w-full border-0" sandbox="allow-scripts" />
