@@ -1,8 +1,11 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
+  ChevronLeft,
+  ChevronRight,
   Check,
   Code2,
   Copy,
+  Ellipsis,
   Expand,
   FileText,
   ListFilter,
@@ -12,6 +15,7 @@ import {
   Save,
   Smartphone,
   Tablet,
+  Trash2,
   Undo2,
   X,
 } from "lucide-react";
@@ -25,6 +29,7 @@ import {
   createResultEntry,
   createModelEntry,
   loadCategoryOptions,
+  deleteResultEntry,
   loadExperimentWorkspace,
   loadModelOptions,
   loadWrapperOptions,
@@ -32,6 +37,7 @@ import {
   SelectOption,
   updateExperimentEntry,
   updatePromptVersionEntry,
+  updateResultEntry,
   updateResultNotes,
   updateResultRating,
 } from "@/shared/db/workspace";
@@ -58,9 +64,16 @@ export function ExperimentDetailPage() {
   const [device, setDevice] = useState<keyof typeof deviceWidths>("desktop");
   const [showCode, setShowCode] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
+  const [showPreviewMenu, setShowPreviewMenu] = useState(false);
+  const [showFullscreen, setShowFullscreen] = useState(false);
+  const [resultActionsId, setResultActionsId] = useState("");
+  const [editingResult, setEditingResult] = useState<WorkspaceResultItem | null>(null);
+  const [showDeleteResult, setShowDeleteResult] = useState<WorkspaceResultItem | null>(null);
   const [notesDraft, setNotesDraft] = useState("");
   const [savingNotes, setSavingNotes] = useState(false);
   const [savingRating, setSavingRating] = useState(false);
+  const [savingEditResult, setSavingEditResult] = useState(false);
+  const [deletingResult, setDeletingResult] = useState(false);
   const [showAddResult, setShowAddResult] = useState(false);
   const [showModelManager, setShowModelManager] = useState(false);
   const [showResultNotesField, setShowResultNotesField] = useState(false);
@@ -82,6 +95,10 @@ export function ExperimentDetailPage() {
   });
   const [resultForm, setResultForm] = useState({
     modelId: "",
+    htmlContent: "",
+    notes: "",
+  });
+  const [editResultDraft, setEditResultDraft] = useState({
     htmlContent: "",
     notes: "",
   });
@@ -182,6 +199,29 @@ export function ExperimentDetailPage() {
   }, [selectedResult?.id, selectedResult?.notes]);
 
   useEffect(() => {
+    setShowPreviewMenu(false);
+  }, [selectedResultId, viewMode]);
+
+  useEffect(() => {
+    setResultActionsId("");
+  }, [selectedResultId, viewMode, selectedVersionId]);
+
+  useEffect(() => {
+    if (!showFullscreen) {
+      return;
+    }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setShowFullscreen(false);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [showFullscreen]);
+
+  useEffect(() => {
     setResultForm((current) => ({
       ...current,
       modelId:
@@ -234,6 +274,7 @@ export function ExperimentDetailPage() {
   const selectedModel = modelOptions.find((option) => option.id === resultForm.modelId);
   const selectedManagerModel =
     filteredModelOptions.find((option) => option.id === resultForm.modelId) ?? selectedModel;
+  const selectedResultIndex = selectedResult ? visibleResults.findIndex((item) => item.id === selectedResult.id) : -1;
 
   if (loading) {
     return (
@@ -282,6 +323,70 @@ export function ExperimentDetailPage() {
     setLastSlot("b");
   };
 
+  const onSelectAdjacentResult = (direction: "prev" | "next") => {
+    if (!visibleResults.length || selectedResultIndex === -1) {
+      return;
+    }
+
+    const delta = direction === "prev" ? -1 : 1;
+    const nextIndex = (selectedResultIndex + delta + visibleResults.length) % visibleResults.length;
+    const nextResultId = visibleResults[nextIndex]?.id;
+
+    if (!nextResultId) {
+      return;
+    }
+
+    setSelectedResultId(nextResultId);
+    setShowPreviewMenu(false);
+  };
+
+  const onOpenEditResult = (result: WorkspaceResultItem) => {
+    setEditingResult(result);
+    setEditResultDraft({
+      htmlContent: result.htmlContent,
+      notes: result.notes,
+    });
+    setResultActionsId("");
+  };
+
+  const onSaveEditResult = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!editingResult) {
+      return;
+    }
+
+    setSavingEditResult(true);
+    await updateResultEntry({
+      resultId: editingResult.id,
+      experimentId: workspace.id,
+      htmlContent: editResultDraft.htmlContent,
+      notes: editResultDraft.notes,
+    });
+    await refreshWorkspace();
+    setSelectedResultId(editingResult.id);
+    setEditingResult(null);
+    setSavingEditResult(false);
+  };
+
+  const onConfirmDeleteResult = async () => {
+    if (!showDeleteResult) {
+      return;
+    }
+
+    const deletingId = showDeleteResult.id;
+    setDeletingResult(true);
+    await deleteResultEntry({
+      resultId: deletingId,
+      experimentId: workspace.id,
+    });
+    await refreshWorkspace();
+    if (selectedResultId === deletingId) {
+      setSelectedResultId("");
+    }
+    setShowDeleteResult(null);
+    setDeletingResult(false);
+  };
+
   const onSaveNotes = async () => {
     if (!selectedResult) {
       return;
@@ -314,7 +419,7 @@ export function ExperimentDetailPage() {
     }
 
     setSavingResult(true);
-    await createResultEntry({
+    const nextResultId = await createResultEntry({
       experimentId: workspace.id,
       promptVersionId: activePrompt.id,
       modelId: resultForm.modelId,
@@ -331,6 +436,12 @@ export function ExperimentDetailPage() {
       notes: "",
     });
     await refreshWorkspace();
+    setSelectedResultId(nextResultId);
+    setSlotAId(nextResultId);
+    setSlotBId(nextResultId);
+    setViewMode("single");
+    setShowCode(false);
+    setShowNotes(false);
   };
 
   const onCreateModel = async (event: FormEvent<HTMLFormElement>) => {
@@ -394,8 +505,8 @@ export function ExperimentDetailPage() {
   };
 
   return (
-    <div className="flex h-[calc(100vh-88px)] min-h-0 flex-col overflow-hidden rounded-xl border border-border/80 bg-surface/70 shadow-panel lg:h-[calc(100vh-96px)]">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/80 px-5 py-4">
+    <div className="flex min-h-0 flex-1 flex-col gap-4">
+      <div className="px-1">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="truncate font-mono text-xl font-semibold tracking-[-0.04em] text-text">
@@ -408,18 +519,9 @@ export function ExperimentDetailPage() {
           </div>
           <p className="mt-2 max-w-3xl text-sm text-muted">{workspace.description}</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" onClick={() => void copyPrompt()}>
-            <Copy className="h-4 w-4" />
-            Copy prompt
-          </Button>
-          <Button variant="ghost" size="sm">
-            <Pencil className="h-4 w-4" />
-            Edit
-          </Button>
-        </div>
       </div>
 
+      <div className="flex h-[calc(100vh-88px)] min-h-0 flex-col overflow-hidden rounded-xl border border-border/80 bg-surface/70 shadow-panel lg:h-[calc(100vh-96px)]">
       <div className="flex flex-wrap items-center gap-1 border-b border-border/80 px-4 py-2">
         <button
           type="button"
@@ -556,6 +658,46 @@ export function ExperimentDetailPage() {
                       >
                         {result.rating ?? "—"}
                       </div>
+                      <div className="relative ml-1">
+                        <button
+                          type="button"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted transition hover:bg-code hover:text-text"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setResultActionsId((current) => (current === result.id ? "" : result.id));
+                          }}
+                          aria-label="Result actions"
+                        >
+                          <Ellipsis className="h-4 w-4" />
+                        </button>
+                        {resultActionsId === result.id ? (
+                          <div className="absolute right-0 top-9 z-10 w-36 rounded-lg border border-border/80 bg-raised p-1.5 shadow-panel">
+                            <button
+                              type="button"
+                              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-muted transition hover:bg-code hover:text-text"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                onOpenEditResult(result);
+                              }}
+                            >
+                              <Pencil className="h-4 w-4" />
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-red-300 transition hover:bg-code"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setShowDeleteResult(result);
+                                setResultActionsId("");
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              Delete
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
                     </button>
                   );
                 })
@@ -572,86 +714,97 @@ export function ExperimentDetailPage() {
               <>
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/80 px-4 py-3">
                   <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className="h-2.5 w-2.5 rounded-full"
-                        style={{ backgroundColor: (viewMode === "single" ? selectedResult : slotA)?.providerColor }}
-                      />
-                      <div className="truncate text-sm font-semibold text-text">
-                        {viewMode === "single"
-                          ? `${selectedResult?.providerName ?? ""} / ${selectedResult?.modelName ?? ""} ${selectedResult?.modelVersion ?? ""}`
-                          : "Comparison workspace"}
-                      </div>
-                    </div>
-                    <div className="mt-1 text-xs text-muted">
-                      {viewMode === "single"
-                        ? `${selectedResult?.fileSizeBytes ?? 0} bytes • ${selectedResult?.lineCount ?? 0} lines`
-                        : "Click results on the left to assign slots A and B."}
-                    </div>
+                    {viewMode === "single" ? (
+                      <>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span
+                            className="h-2.5 w-2.5 rounded-full"
+                            style={{ backgroundColor: selectedResult?.providerColor }}
+                          />
+                          <div className="truncate text-sm font-semibold text-text">
+                            {selectedResult?.providerName ?? ""} / {selectedResult?.modelName ?? ""}{" "}
+                            {selectedResult?.modelVersion ?? ""}
+                          </div>
+                          <select
+                            className="h-7 rounded-full border border-border/80 bg-code px-2.5 font-mono text-[11px] text-text outline-none focus:border-primary"
+                            value={selectedResult?.rating ?? ""}
+                            onChange={(event) => void onChangeRating(event.target.value)}
+                            disabled={savingRating || !selectedResult}
+                          >
+                            <option value="">Unrated</option>
+                            {Array.from({ length: 10 }, (_, index) => index + 1).map((value) => (
+                              <option key={value} value={value}>
+                                {value}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="mt-1 text-xs text-muted">
+                          {selectedResult?.modelComment || "No comment"} • {selectedResult?.fileSizeBytes ?? 0} bytes •{" "}
+                          {selectedResult?.lineCount ?? 0} lines
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="truncate text-sm font-semibold text-text">Comparison workspace</div>
+                        <div className="mt-1 text-xs text-muted">
+                          Click results on the left to assign slots A and B.
+                        </div>
+                      </>
+                    )}
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {viewMode === "single" && selectedResult ? (
-                      <select
-                        className="h-9 rounded-md border border-border/80 bg-code px-3 text-sm text-text outline-none focus:border-primary"
-                        value={selectedResult.rating ?? ""}
-                        onChange={(event) => void onChangeRating(event.target.value)}
-                        disabled={savingRating}
-                      >
-                        <option value="">Unrated</option>
-                        {Array.from({ length: 10 }, (_, index) => index + 1).map((value) => (
-                          <option key={value} value={value}>
-                            Rating {value}
-                          </option>
-                        ))}
-                      </select>
-                    ) : null}
-                    <Button
-                      variant={showCode ? "default" : "ghost"}
-                      size="sm"
-                      onClick={() => setShowCode((value) => !value)}
-                    >
-                      <Code2 className="h-4 w-4" />
-                      Code
-                    </Button>
-                    <Button
-                      variant={showNotes ? "default" : "ghost"}
-                      size="sm"
-                      onClick={() => setShowNotes((value) => !value)}
-                    >
-                      <FileText className="h-4 w-4" />
-                      Notes
-                    </Button>
-                    <Button variant="ghost" size="sm">
+                  <div className="relative flex flex-wrap items-center gap-2">
+                    <div className="flex rounded-md border border-border/80 bg-code p-1">
+                      <DeviceButton active={device === "mobile"} onClick={() => setDevice("mobile")} icon={Smartphone} label="375" />
+                      <DeviceButton active={device === "tablet"} onClick={() => setDevice("tablet")} icon={Tablet} label="768" />
+                      <DeviceButton active={device === "desktop"} onClick={() => setDevice("desktop")} icon={Monitor} label="Full" />
+                    </div>
+                    <Button variant="ghost" size="sm" onClick={() => setShowFullscreen(true)}>
                       <Expand className="h-4 w-4" />
                       Fullscreen
                     </Button>
+                    <button
+                      type="button"
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border/80 bg-code text-muted transition hover:text-text"
+                      onClick={() => setShowPreviewMenu((value) => !value)}
+                      aria-label="More actions"
+                    >
+                      <Ellipsis className="h-4 w-4" />
+                    </button>
+                    {showPreviewMenu ? (
+                      <div className="absolute right-0 top-11 z-10 w-44 rounded-lg border border-border/80 bg-raised p-1.5 shadow-panel">
+                        <button
+                          type="button"
+                          className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-muted transition hover:bg-code hover:text-text"
+                          onClick={() => {
+                            setShowCode((value) => !value);
+                            setShowPreviewMenu(false);
+                          }}
+                        >
+                          <Code2 className="h-4 w-4" />
+                          {showCode ? "Hide code" : "Show code"}
+                        </button>
+                        <button
+                          type="button"
+                          className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-muted transition hover:bg-code hover:text-text"
+                          onClick={() => {
+                            setShowNotes((value) => !value);
+                            setShowPreviewMenu(false);
+                          }}
+                        >
+                          <FileText className="h-4 w-4" />
+                          {showNotes ? "Hide notes" : "Show notes"}
+                        </button>
+                      </div>
+                    ) : null}
                   </div>
-                </div>
-
-                <div className="flex items-center justify-center gap-1 border-b border-border/80 px-3 py-2">
-                  <DeviceButton active={device === "mobile"} onClick={() => setDevice("mobile")} icon={Smartphone} label="375" />
-                  <DeviceButton active={device === "tablet"} onClick={() => setDevice("tablet")} icon={Tablet} label="768" />
-                  <DeviceButton active={device === "desktop"} onClick={() => setDevice("desktop")} icon={Monitor} label="Full" />
                 </div>
 
                 <div className="min-h-0 flex-1 overflow-auto bg-code p-4">
                   {viewMode === "single" ? (
-                    showCode ? (
-                      <pre className="overflow-auto whitespace-pre-wrap rounded-lg border border-border/80 bg-[#050608] p-4 font-mono text-xs leading-6 text-muted">
-                        {selectedResult?.htmlContent ?? "No result selected."}
-                      </pre>
-                    ) : (
-                      <div className="mx-auto h-full min-h-[520px] max-w-full overflow-hidden rounded-lg border border-border/80 bg-white" style={{ width: deviceWidths[device] }}>
-                        {selectedResult ? (
-                          <iframe title={selectedResult.id} srcDoc={selectedResult.htmlContent} className="h-full w-full border-0" sandbox="allow-scripts" />
-                        ) : null}
-                      </div>
-                    )
+                    <SinglePreviewCanvas result={selectedResult} device={device} showCode={showCode} />
                   ) : (
-                    <div className="grid h-full min-h-[520px] gap-4 xl:grid-cols-2">
-                      <ComparePanel label="A" result={slotA} device={device} showCode={showCode} />
-                      <ComparePanel label="B" result={slotB} device={device} showCode={showCode} accent="orange" />
-                    </div>
+                    <CompareCanvas slotA={slotA} slotB={slotB} device={device} showCode={showCode} />
                   )}
                 </div>
 
@@ -810,6 +963,7 @@ export function ExperimentDetailPage() {
           </aside>
         </div>
       )}
+      </div>
 
       {showAddResult ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
@@ -926,6 +1080,97 @@ export function ExperimentDetailPage() {
               </Button>
             </div>
           </form>
+        </div>
+      ) : null}
+
+      {editingResult ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <form className="w-full max-w-4xl rounded-xl border border-border/80 bg-raised p-5 shadow-panel" onSubmit={onSaveEditResult}>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="font-mono text-xl font-semibold text-text">Edit result</h2>
+                <p className="mt-1 text-sm text-muted">
+                  Update the saved HTML output for {editingResult.providerName} / {editingResult.modelName} {editingResult.modelVersion}.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="inline-flex h-9 w-9 items-center justify-center text-muted transition hover:text-text"
+                onClick={() => setEditingResult(null)}
+                aria-label="Close dialog"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="mt-5 space-y-4">
+              <div className="space-y-2">
+                <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">HTML output</div>
+                <textarea
+                  className="min-h-[320px] w-full rounded-lg border border-border/80 bg-code px-3 py-2 font-mono text-sm text-text outline-none focus:border-primary"
+                  value={editResultDraft.htmlContent}
+                  onChange={(event) =>
+                    setEditResultDraft((current) => ({ ...current, htmlContent: event.target.value }))
+                  }
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Notes</div>
+                <textarea
+                  className="min-h-[100px] w-full rounded-lg border border-border/80 bg-code px-3 py-2 text-sm text-text outline-none focus:border-primary"
+                  value={editResultDraft.notes}
+                  onChange={(event) =>
+                    setEditResultDraft((current) => ({ ...current, notes: event.target.value }))
+                  }
+                />
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end gap-2">
+              <Button type="button" variant="ghost" onClick={() => setEditingResult(null)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={savingEditResult}>
+                <Save className="h-4 w-4" />
+                Save result
+              </Button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+
+      {showDeleteResult ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-md rounded-xl border border-border/80 bg-raised p-5 shadow-panel">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="font-mono text-xl font-semibold text-text">Delete result</h2>
+                <p className="mt-1 text-sm text-muted">
+                  This will permanently remove the selected result from the current prompt version.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="inline-flex h-9 w-9 items-center justify-center text-muted transition hover:text-text"
+                onClick={() => setShowDeleteResult(null)}
+                aria-label="Close dialog"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="mt-5 rounded-lg border border-border/80 bg-code px-4 py-3 text-sm text-text">
+              {showDeleteResult.providerName} / {showDeleteResult.modelName} {showDeleteResult.modelVersion}
+              <div className="mt-1 text-xs text-muted">Attempt {showDeleteResult.attempt}</div>
+            </div>
+            <div className="mt-6 flex justify-end gap-2">
+              <Button type="button" variant="ghost" onClick={() => setShowDeleteResult(null)}>
+                Cancel
+              </Button>
+              <Button type="button" onClick={() => void onConfirmDeleteResult()} disabled={deletingResult}>
+                <Trash2 className="h-4 w-4" />
+                Delete
+              </Button>
+            </div>
+          </div>
         </div>
       ) : null}
 
@@ -1074,6 +1319,99 @@ export function ExperimentDetailPage() {
           </div>
         </div>
       ) : null}
+
+      {showFullscreen && hasResults ? (
+        <div className="fixed inset-0 z-[60] bg-black/80 p-4">
+          <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-border/80 bg-raised shadow-panel">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/80 px-4 py-3">
+              <div className="min-w-0">
+                {viewMode === "single" ? (
+                  <>
+                    <div className="flex items-center gap-2">
+                      {visibleResults.length > 1 ? (
+                        <button
+                          type="button"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border/80 bg-code text-muted transition hover:text-text"
+                          onClick={() => onSelectAdjacentResult("prev")}
+                          aria-label="Previous result"
+                        >
+                          <ChevronLeft className="h-4 w-4" />
+                        </button>
+                      ) : null}
+                      <div className="truncate text-sm font-semibold text-text">
+                        {selectedResult?.providerName ?? ""} / {selectedResult?.modelName ?? ""}{" "}
+                        {selectedResult?.modelVersion ?? ""}
+                      </div>
+                      <span className="rounded-full bg-white/5 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-muted">
+                        Attempt {selectedResult?.attempt ?? "-"}
+                      </span>
+                      {visibleResults.length > 1 ? (
+                        <button
+                          type="button"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border/80 bg-code text-muted transition hover:text-text"
+                          onClick={() => onSelectAdjacentResult("next")}
+                          aria-label="Next result"
+                        >
+                          <ChevronRight className="h-4 w-4" />
+                        </button>
+                      ) : null}
+                    </div>
+                    <div className="mt-1 text-xs text-muted">
+                      {selectedResult?.modelComment || "No comment"} • {selectedResult?.fileSizeBytes ?? 0} bytes •{" "}
+                      {selectedResult?.lineCount ?? 0} lines
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="truncate text-sm font-semibold text-text">Comparison workspace</div>
+                    <div className="mt-1 text-xs text-muted">
+                      Fullscreen preview of the current comparison view.
+                    </div>
+                  </>
+                )}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex rounded-md border border-border/80 bg-code p-1">
+                  <DeviceButton active={device === "mobile"} onClick={() => setDevice("mobile")} icon={Smartphone} label="375" />
+                  <DeviceButton active={device === "tablet"} onClick={() => setDevice("tablet")} icon={Tablet} label="768" />
+                  <DeviceButton active={device === "desktop"} onClick={() => setDevice("desktop")} icon={Monitor} label="Full" />
+                </div>
+                <button
+                  type="button"
+                  className="inline-flex h-9 w-9 items-center justify-center text-muted transition hover:text-text"
+                  onClick={() => setShowFullscreen(false)}
+                  aria-label="Close fullscreen"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+            <div className="min-h-0 flex-1 overflow-auto bg-code p-4">
+              {viewMode === "single" ? (
+                <SinglePreviewCanvas result={selectedResult} device={device} showCode={showCode} fullscreen />
+              ) : (
+                <CompareCanvas slotA={slotA} slotB={slotB} device={device} showCode={showCode} fullscreen />
+              )}
+            </div>
+            {showNotes && viewMode === "single" ? (
+              <div className="border-t border-border/80 p-4">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <div className="font-mono text-xs uppercase tracking-[0.12em] text-dim">Notes</div>
+                  <Button size="sm" onClick={() => void onSaveNotes()} disabled={savingNotes || notesDraft === (selectedResult?.notes ?? "") || !selectedResult}>
+                    <Save className="h-4 w-4" />
+                    Save notes
+                  </Button>
+                </div>
+                <textarea
+                  className="min-h-[110px] w-full rounded-lg border border-border/80 bg-code px-3 py-2 text-sm text-text outline-none focus:border-primary"
+                  value={notesDraft}
+                  onChange={(event) => setNotesDraft(event.target.value)}
+                />
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1107,6 +1445,61 @@ function DeviceButton({ active, onClick, icon: Icon, label }: { active: boolean;
       <Icon className="h-3.5 w-3.5" />
       {label}
     </button>
+  );
+}
+
+function SinglePreviewCanvas({
+  result,
+  device,
+  showCode,
+  fullscreen = false,
+}: {
+  result?: WorkspaceResultItem;
+  device: keyof typeof deviceWidths;
+  showCode: boolean;
+  fullscreen?: boolean;
+}) {
+  if (showCode) {
+    return (
+      <pre className="overflow-auto whitespace-pre-wrap rounded-lg border border-border/80 bg-[#050608] p-4 font-mono text-xs leading-6 text-muted">
+        {result?.htmlContent ?? "No result selected."}
+      </pre>
+    );
+  }
+
+  return (
+    <div
+      className={cn(
+        "mx-auto max-w-full overflow-hidden rounded-lg border border-border/80 bg-white",
+        fullscreen ? "h-full min-h-[640px]" : "h-full min-h-[520px]",
+      )}
+      style={{ width: deviceWidths[device] }}
+    >
+      {result ? (
+        <iframe title={result.id} srcDoc={result.htmlContent} className="h-full w-full border-0" sandbox="allow-scripts" />
+      ) : null}
+    </div>
+  );
+}
+
+function CompareCanvas({
+  slotA,
+  slotB,
+  device,
+  showCode,
+  fullscreen = false,
+}: {
+  slotA?: WorkspaceResultItem;
+  slotB?: WorkspaceResultItem;
+  device: keyof typeof deviceWidths;
+  showCode: boolean;
+  fullscreen?: boolean;
+}) {
+  return (
+    <div className={cn("grid h-full gap-4 xl:grid-cols-2", fullscreen ? "min-h-[640px]" : "min-h-[520px]")}>
+      <ComparePanel label="A" result={slotA} device={device} showCode={showCode} />
+      <ComparePanel label="B" result={slotB} device={device} showCode={showCode} accent="orange" />
+    </div>
   );
 }
 

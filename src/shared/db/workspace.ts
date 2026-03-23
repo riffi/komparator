@@ -604,6 +604,37 @@ export async function updateResultRating(resultId: string, rating: number | null
   await db.results.update(resultId, { rating });
 }
 
+export async function updateResultEntry(input: {
+  resultId: string;
+  experimentId: string;
+  htmlContent: string;
+  notes: string;
+}) {
+  const now = new Date().toISOString();
+  const htmlContent = input.htmlContent.trim();
+  const notes = input.notes.trim();
+
+  await db.transaction("rw", [db.results, db.experiments], async () => {
+    await db.results.update(input.resultId, {
+      htmlContent,
+      notes,
+      fileSizeBytes: new Blob([htmlContent]).size,
+      lineCount: countLines(htmlContent),
+    });
+
+    await db.experiments.update(input.experimentId, { updatedAt: now });
+  });
+}
+
+export async function deleteResultEntry(input: { resultId: string; experimentId: string }) {
+  const now = new Date().toISOString();
+
+  await db.transaction("rw", [db.results, db.experiments], async () => {
+    await db.results.delete(input.resultId);
+    await db.experiments.update(input.experimentId, { updatedAt: now });
+  });
+}
+
 export async function createExperimentWithInitialPrompt(input: {
   title: string;
   description: string;
@@ -677,6 +708,7 @@ export async function createResultEntry(input: {
   const now = new Date().toISOString();
   const htmlContent = input.htmlContent.trim();
   const notes = input.notes.trim();
+  const resultId = crypto.randomUUID();
 
   await db.transaction("rw", [db.providers, db.models, db.results, db.experiments], async () => {
     const model = await db.models.get(input.modelId);
@@ -690,7 +722,7 @@ export async function createResultEntry(input: {
       .toArray();
 
     await db.results.add({
-      id: crypto.randomUUID(),
+      id: resultId,
       promptVersionId: input.promptVersionId,
       modelId: model.id,
       attempt: previousAttempts.length + 1,
@@ -704,6 +736,8 @@ export async function createResultEntry(input: {
 
     await db.experiments.update(input.experimentId, { updatedAt: now });
   });
+
+  return resultId;
 }
 
 export async function updateExperimentEntry(input: {
