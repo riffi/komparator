@@ -65,7 +65,6 @@ export function ExperimentDetailPage() {
   const [settingsDraft, setSettingsDraft] = useState({
     title: "",
     description: "",
-    status: "draft" as "draft" | "active" | "completed" | "archived",
     categoryId: "",
     wrapperId: "",
     promptText: "",
@@ -178,7 +177,6 @@ export function ExperimentDetailPage() {
     setSettingsDraft({
       title: workspace.title,
       description: workspace.description,
-      status: workspace.status,
       categoryId: workspace.categoryId ?? "",
       wrapperId: workspace.wrapperId ?? "",
       promptText: activeVersion?.promptText ?? "",
@@ -298,7 +296,6 @@ export function ExperimentDetailPage() {
       experimentId: workspace.id,
       title: settingsDraft.title,
       description: settingsDraft.description,
-      status: settingsDraft.status,
       categoryId: settingsDraft.categoryId || null,
       wrapperId: settingsDraft.wrapperId || null,
       tags: workspace.tags,

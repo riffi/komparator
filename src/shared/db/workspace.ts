@@ -22,6 +22,15 @@ export type SelectOption = {
   label: string;
 };
 
+export type CategoryManagerItem = {
+  id: string;
+  name: string;
+  description: string;
+  color: string;
+  sortOrder: number;
+  count: number;
+};
+
 function formatResultDate(value: string) {
   return new Date(value).toLocaleString("en-US", {
     month: "short",
@@ -144,7 +153,6 @@ export async function loadExperimentsList(): Promise<ExperimentListItem[]> {
       id: experiment.id,
       title: experiment.title,
       description: experiment.description,
-      status: experiment.status,
       categoryId: experiment.categoryId,
       categoryName: category?.name ?? "No category",
       categoryColor: category?.color ?? "#71717a",
@@ -223,7 +231,6 @@ export async function loadExperimentWorkspace(experimentId: string): Promise<Exp
     id: experiment.id,
     title: experiment.title,
     description: experiment.description,
-    status: experiment.status,
     categoryId: experiment.categoryId,
     categoryName: category?.name ?? "No category",
     categoryColor: category?.color ?? "#71717a",
@@ -257,7 +264,6 @@ export async function updateResultRating(resultId: string, rating: number | null
 export async function createExperimentWithInitialPrompt(input: {
   title: string;
   description: string;
-  status: ExperimentRecord["status"];
   categoryId: string | null;
   wrapperId: string | null;
   tags: string[];
@@ -273,7 +279,6 @@ export async function createExperimentWithInitialPrompt(input: {
       id: experimentId,
       title: input.title,
       description: input.description,
-      status: input.status,
       categoryId: input.categoryId,
       wrapperId: input.wrapperId,
       tags: input.tags,
@@ -403,7 +408,6 @@ export async function updateExperimentEntry(input: {
   experimentId: string;
   title: string;
   description: string;
-  status: ExperimentRecord["status"];
   categoryId: string | null;
   wrapperId: string | null;
   tags: string[];
@@ -413,12 +417,75 @@ export async function updateExperimentEntry(input: {
   await db.experiments.update(input.experimentId, {
     title: input.title.trim(),
     description: input.description.trim(),
-    status: input.status,
     categoryId: input.categoryId,
     wrapperId: input.wrapperId,
     tags: input.tags,
     updatedAt: now,
   });
+}
+
+export async function loadManageCategories(): Promise<CategoryManagerItem[]> {
+  const [categories, experiments] = await Promise.all([db.categories.toArray(), db.experiments.toArray()]);
+  const counts = new Map<string, number>();
+
+  for (const experiment of experiments) {
+    if (experiment.categoryId) {
+      counts.set(experiment.categoryId, (counts.get(experiment.categoryId) ?? 0) + 1);
+    }
+  }
+
+  return [...categories]
+    .sort((left, right) => left.sortOrder - right.sortOrder)
+    .map((category) => ({
+      id: category.id,
+      name: category.name,
+      description: category.description,
+      color: category.color,
+      sortOrder: category.sortOrder,
+      count: counts.get(category.id) ?? 0,
+    }));
+}
+
+export async function createCategoryEntry(input: {
+  name: string;
+  description: string;
+  color: string;
+}) {
+  const now = new Date().toISOString();
+  const categories = await db.categories.toArray();
+  const nextSortOrder = categories.reduce((max, item) => Math.max(max, item.sortOrder), 0) + 1;
+
+  await db.categories.add({
+    id: crypto.randomUUID(),
+    name: input.name.trim(),
+    description: input.description.trim(),
+    color: input.color.trim() || "#5b8def",
+    sortOrder: nextSortOrder,
+    createdAt: now,
+  });
+}
+
+export async function updateCategoryEntry(input: {
+  categoryId: string;
+  name: string;
+  description: string;
+  color: string;
+}) {
+  await db.categories.update(input.categoryId, {
+    name: input.name.trim(),
+    description: input.description.trim(),
+    color: input.color.trim() || "#5b8def",
+  });
+}
+
+export async function deleteCategoryEntry(categoryId: string) {
+  const experimentsUsingCategory = await db.experiments.where("categoryId").equals(categoryId).count();
+
+  if (experimentsUsingCategory > 0) {
+    throw new Error("Category is still used by experiments.");
+  }
+
+  await db.categories.delete(categoryId);
 }
 
 export async function updatePromptVersionEntry(input: {

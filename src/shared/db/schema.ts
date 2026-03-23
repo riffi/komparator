@@ -30,6 +30,22 @@ export class KomparatorDb extends Dexie {
       models: "id, providerId, [providerId+name+version+comment], isActive",
       results: "id, promptVersionId, modelId, [promptVersionId+modelId+attempt], createdAt, rating",
     });
+
+    this.version(2)
+      .stores({
+        categories: "id, name, sortOrder",
+        wrappers: "id, name, isDefault, updatedAt",
+        experiments: "id, categoryId, wrapperId, createdAt, updatedAt",
+        promptVersions: "id, experimentId, [experimentId+versionNumber]",
+        providers: "id, name, isActive",
+        models: "id, providerId, [providerId+name+version+comment], isActive",
+        results: "id, promptVersionId, modelId, [promptVersionId+modelId+attempt], createdAt, rating",
+      })
+      .upgrade(async (tx) => {
+        await tx.table("experiments").toCollection().modify((experiment) => {
+          delete experiment.status;
+        });
+      });
   }
 }
 

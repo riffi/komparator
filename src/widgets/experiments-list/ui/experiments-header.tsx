@@ -1,4 +1,4 @@
-import { Plus, Search } from "lucide-react";
+import { FolderTree, Plus, Search } from "lucide-react";
 import { filterStore } from "@/features/experiment-filters/model/use-experiment-filters";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
@@ -7,9 +7,11 @@ import { cn } from "@/shared/lib/cn";
 export function ExperimentsHeader({
   count,
   onCreate,
+  onManageCategories,
 }: {
   count: number;
   onCreate: () => void;
+  onManageCategories: () => void;
 }) {
   const query = filterStore((state) => state.query);
   const sort = filterStore((state) => state.sort);
@@ -70,6 +72,11 @@ export function ExperimentsHeader({
         <option value="oldest">Oldest</option>
         <option value="title">A-Z</option>
       </select>
+
+      <Button variant="ghost" onClick={onManageCategories}>
+        <FolderTree className="h-4 w-4" />
+        Categories
+      </Button>
 
       <Button onClick={onCreate}>
         <Plus className="h-4 w-4" />

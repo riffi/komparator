@@ -30,10 +30,6 @@ const router = createBrowserRouter([
         element: <PlaceholderPage title="Wrappers" />,
       },
       {
-        path: appRoutes.categories,
-        element: <PlaceholderPage title="Categories" />,
-      },
-      {
         path: appRoutes.stats,
         element: <PlaceholderPage title="Stats" />,
       },

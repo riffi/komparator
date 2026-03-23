@@ -1,12 +1,9 @@
 import { ExperimentSort } from "@/features/experiment-filters/model/use-experiment-filters";
 
-export type ExperimentStatus = "draft" | "active" | "completed" | "archived";
-
 export type ExperimentListItem = {
   id: string;
   title: string;
   description: string;
-  status: ExperimentStatus;
   categoryId: string | null;
   categoryName: string;
   categoryColor: string;
@@ -47,7 +44,6 @@ export type ExperimentRecord = {
   id: string;
   title: string;
   description: string;
-  status: ExperimentStatus;
   categoryId: string | null;
   wrapperId: string | null;
   tags: string[];
@@ -126,7 +122,6 @@ export type ExperimentWorkspace = {
   id: string;
   title: string;
   description: string;
-  status: ExperimentStatus;
   categoryId: string | null;
   categoryName: string;
   categoryColor: string;

@@ -25,22 +25,6 @@ description: |
   - Экспорт/импорт всех данных (JSON)
 
   Стек: SPA на Vercel, Dexie (IndexedDB), без бэкенда.
-enums:
-  experiment_status:
-    description: Статус жизненного цикла эксперимента
-    values:
-      - name: draft
-        label: Черновик
-        description: Промпт в процессе подготовки
-      - name: active
-        label: Активный
-        description: Идёт сбор результатов от моделей
-      - name: completed
-        label: Завершён
-        description: Все нужные результаты собраны, выводы сделаны
-      - name: archived
-        label: Архив
-        description: Эксперимент убран из активной работы
 entities:
   category:
     label: Категория
@@ -127,11 +111,6 @@ entities:
         type: string
         label: Описание
         description: Подробное описание цели и ожиданий
-      status:
-        type: experiment_status
-        required: true
-        default: draft
-        label: Статус
       category_id:
         type: uuid
         fk: category.id

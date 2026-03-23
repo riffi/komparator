@@ -11,10 +11,6 @@ metadata:
     surface-code: darker inset background for code/prompt/HTML areas
     accent-provider: "each LLM provider gets a distinct color (Anthropic: coral, OpenAI: green, Google: blue, Meta: purple, xAI: neutral)"
     rating-scale: gradient from red (1) through yellow (5) to green (10)
-    status-draft: muted gray
-    status-active: blue
-    status-completed: green
-    status-archived: dim gray
   breakpoints:
     mobile: < 768px
     tablet: 768px - 1279px
@@ -43,9 +39,6 @@ templates:
           - id: main_nav
             purpose: Primary navigation links with icons
             type: main_navigation
-          - id: category_filter
-            purpose: "Category quick-filter: list of categories with color dots. Click filters experiments list. 'All' option at top."
-            type: custom
         fullHeight: true
       - id: main
         type: content
@@ -84,7 +77,10 @@ screens:
   experiments_list:
     blocks:
       - id: list_header
-        purpose: "Compact toolbar row: page title 'Experiments' with count, view mode segmented control (All | By category), title-only search input, sort dropdown, and 'New experiment' primary button."
+        purpose: "Compact toolbar row: page title 'Experiments' with count, view mode segmented control (All | By category), title-only search input, sort dropdown, 'Categories' button for inline category management, and 'New experiment' primary button."
+        columns: 12
+      - id: categories_manager
+        purpose: "Modal opened from the toolbar on the experiments page. Lists categories with color, description and experiment count. Supports create, rename, recolor and delete. Delete is disabled when the category is still used by experiments."
         columns: 12
       - id: experiments_grid
         purpose: "Content area with two modes. 'All' mode shows one responsive grid of experiment cards. 'By category' mode shows category sections with colored headers and per-category responsive grids."
@@ -142,7 +138,7 @@ screens:
   experiment_form:
     blocks:
       - id: form_content
-        purpose: "Form fields: title (text input, required), description (textarea), category (optional select from categories or create new inline), wrapper (optional select from wrappers with explicit 'No wrapper' option; shows raw prompt when not selected and wrapper preview when selected). Form remains usable even if categories or wrappers catalogs are empty."
+        purpose: "Form fields: title (text input, required), description (textarea), category (optional select from categories managed on the experiments page), wrapper (optional select from wrappers with explicit 'No wrapper' option; shows raw prompt when not selected and wrapper preview when selected). Form remains usable even if categories or wrappers catalogs are empty."
         columns: 12
       - id: form_footer
         purpose: Cancel (closes modal) and Save (validates, saves, navigates to experiment_detail) buttons.

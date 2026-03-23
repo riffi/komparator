@@ -1,14 +1,20 @@
 import { FormEvent, useEffect, useState } from "react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { ExperimentListItem } from "@/entities/experiment/model/types";
 import { ExperimentsHeader } from "@/widgets/experiments-list/ui/experiments-header";
 import { ExperimentsGrid } from "@/widgets/experiments-list/ui/experiments-grid";
 import {
+  CategoryManagerItem,
   SelectOption,
+  createCategoryEntry,
   createExperimentWithInitialPrompt,
+  deleteCategoryEntry,
   loadCategoryOptions,
   loadExperimentsList,
+  loadManageCategories,
   loadWrapperOptions,
+  updateCategoryEntry,
 } from "@/shared/db/workspace";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
@@ -29,7 +35,16 @@ export function ExperimentsPage() {
   const [wrapperOptions, setWrapperOptions] = useState<SelectOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+  const [showCategories, setShowCategories] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [categories, setCategories] = useState<CategoryManagerItem[]>([]);
+  const [categoryForm, setCategoryForm] = useState({
+    name: "",
+    description: "",
+    color: "#5b8def",
+  });
+  const [editingCategoryId, setEditingCategoryId] = useState<string>("");
+  const [categoryError, setCategoryError] = useState("");
   const [form, setForm] = useState<ExperimentCreateForm>({
     title: "",
     description: "",
@@ -46,11 +61,13 @@ export function ExperimentsPage() {
       loadCategoryOptions(),
       loadWrapperOptions(),
     ]);
+    const nextManageCategories = await loadManageCategories();
 
     if (!cancelledRef?.current) {
       setExperiments(nextExperiments);
       setCategoryOptions(nextCategories);
       setWrapperOptions(nextWrappers);
+      setCategories(nextManageCategories);
       setLoading(false);
     }
   };
@@ -80,7 +97,6 @@ export function ExperimentsPage() {
     const experimentId = await createExperimentWithInitialPrompt({
       title: form.title.trim(),
       description: form.description.trim(),
-      status: "draft",
       categoryId: form.categoryId || null,
       wrapperId: form.wrapperId || null,
       tags: [],
@@ -101,9 +117,60 @@ export function ExperimentsPage() {
     navigate(`/experiments/${experimentId}`);
   };
 
+  const onSaveCategory = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!categoryForm.name.trim()) {
+      return;
+    }
+
+    setCategoryError("");
+
+    if (editingCategoryId) {
+      await updateCategoryEntry({
+        categoryId: editingCategoryId,
+        name: categoryForm.name,
+        description: categoryForm.description,
+        color: categoryForm.color,
+      });
+    } else {
+      await createCategoryEntry(categoryForm);
+    }
+
+    setCategoryForm({ name: "", description: "", color: "#5b8def" });
+    setEditingCategoryId("");
+    await refresh();
+  };
+
+  const onEditCategory = (category: CategoryManagerItem) => {
+    setEditingCategoryId(category.id);
+    setCategoryForm({
+      name: category.name,
+      description: category.description,
+      color: category.color,
+    });
+  };
+
+  const onDeleteCategory = async (categoryId: string) => {
+    try {
+      setCategoryError("");
+      await deleteCategoryEntry(categoryId);
+      if (editingCategoryId === categoryId) {
+        setEditingCategoryId("");
+        setCategoryForm({ name: "", description: "", color: "#5b8def" });
+      }
+      await refresh();
+    } catch (error) {
+      setCategoryError(error instanceof Error ? error.message : "Unable to delete category.");
+    }
+  };
+
   return (
     <div className="space-y-6">
-      <ExperimentsHeader count={experiments.length} onCreate={() => setShowCreate(true)} />
+      <ExperimentsHeader
+        count={experiments.length}
+        onCreate={() => setShowCreate(true)}
+        onManageCategories={() => setShowCategories(true)}
+      />
       <ExperimentsGrid experiments={experiments} loading={loading} />
 
       {showCreate ? (
@@ -227,6 +294,122 @@ export function ExperimentsPage() {
               </Button>
             </div>
           </form>
+        </div>
+      ) : null}
+
+      {showCategories ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-4xl rounded-xl border border-border/80 bg-raised p-5 shadow-panel">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="font-mono text-xl font-semibold text-text">Manage categories</h2>
+                <p className="mt-1 text-sm text-muted">
+                  Create, rename, recolor and remove categories without leaving experiments.
+                </p>
+              </div>
+              <Button type="button" variant="ghost" size="sm" onClick={() => setShowCategories(false)}>
+                Close
+              </Button>
+            </div>
+
+            <div className="mt-5 grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+              <div className="space-y-3">
+                {categories.length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-border/80 bg-surface/40 px-4 py-8 text-center font-mono text-sm text-dim">
+                    No categories yet.
+                  </div>
+                ) : (
+                  categories.map((category) => (
+                    <div
+                      key={category.id}
+                      className="flex flex-wrap items-center gap-3 rounded-lg border border-border/80 bg-surface/60 px-4 py-3"
+                    >
+                      <span className="h-3 w-3 rounded-full" style={{ backgroundColor: category.color }} />
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-semibold text-text">{category.name}</div>
+                        <div className="truncate text-xs text-muted">
+                          {category.description || "No description"}
+                        </div>
+                      </div>
+                      <span className="font-mono text-xs text-dim">{category.count}</span>
+                      <Button type="button" variant="ghost" size="sm" onClick={() => onEditCategory(category)}>
+                        <Pencil className="h-4 w-4" />
+                        Edit
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => void onDeleteCategory(category.id)}
+                        disabled={category.count > 0}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        Delete
+                      </Button>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <form className="space-y-4 rounded-lg border border-border/80 bg-surface/60 p-4" onSubmit={onSaveCategory}>
+                <div className="font-mono text-xs uppercase tracking-[0.12em] text-dim">
+                  {editingCategoryId ? "Edit category" : "New category"}
+                </div>
+                <label className="space-y-2">
+                  <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Name</span>
+                  <Input
+                    value={categoryForm.name}
+                    onChange={(event) => setCategoryForm((current) => ({ ...current, name: event.target.value }))}
+                    placeholder="Landing Pages"
+                    required
+                  />
+                </label>
+                <label className="space-y-2">
+                  <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Description</span>
+                  <textarea
+                    className="min-h-[96px] w-full rounded-md border border-border/80 bg-code px-3 py-2 text-sm text-text outline-none transition focus:border-primary"
+                    value={categoryForm.description}
+                    onChange={(event) => setCategoryForm((current) => ({ ...current, description: event.target.value }))}
+                  />
+                </label>
+                <label className="space-y-2">
+                  <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Color</span>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="color"
+                      className="h-10 w-14 rounded-md border border-border/80 bg-code p-1"
+                      value={categoryForm.color}
+                      onChange={(event) => setCategoryForm((current) => ({ ...current, color: event.target.value }))}
+                    />
+                    <Input
+                      value={categoryForm.color}
+                      onChange={(event) => setCategoryForm((current) => ({ ...current, color: event.target.value }))}
+                    />
+                  </div>
+                </label>
+                {categoryError ? <div className="text-sm text-rose-400">{categoryError}</div> : null}
+                <div className="flex items-center justify-end gap-2">
+                  {editingCategoryId ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => {
+                        setEditingCategoryId("");
+                        setCategoryForm({ name: "", description: "", color: "#5b8def" });
+                        setCategoryError("");
+                      }}
+                    >
+                      Reset
+                    </Button>
+                  ) : null}
+                  <Button type="submit">
+                    <Plus className="h-4 w-4" />
+                    {editingCategoryId ? "Save category" : "Create category"}
+                  </Button>
+                </div>
+              </form>
+            </div>
+          </div>
         </div>
       ) : null}
     </div>

@@ -1,4 +1,4 @@
-import { BarChart3, Braces, FolderKanban, Grid2x2, Tags } from "lucide-react";
+import { BarChart3, Braces, FolderKanban, Grid2x2 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { navigationItems } from "@/shared/config/navigation";
 import { cn } from "@/shared/lib/cn";
@@ -8,7 +8,6 @@ const iconMap = {
   experiments: Grid2x2,
   models: FolderKanban,
   wrappers: Braces,
-  categories: Tags,
   stats: BarChart3,
 };
 

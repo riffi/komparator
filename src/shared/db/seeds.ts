@@ -90,7 +90,6 @@ export const seedExperimentRecords: ExperimentRecord[] = [
     title: "Dashboard Widget Comparison",
     description:
       "Compare how different LLMs generate a responsive analytics dashboard card with chart integration and real-time data display.",
-    status: "active",
     categoryId: "ui",
     wrapperId: "standard-html",
     tags: ["dashboard", "charts", "responsive"],
@@ -102,7 +101,6 @@ export const seedExperimentRecords: ExperimentRecord[] = [
     title: "SaaS Hero Section Variants",
     description:
       "Testing hero section generation with gradient backgrounds, CTA placement, and animated illustrations across models.",
-    status: "active",
     categoryId: "landing",
     wrapperId: "standard-html",
     tags: ["hero", "saas", "animation"],
@@ -114,7 +112,6 @@ export const seedExperimentRecords: ExperimentRecord[] = [
     title: "Interactive Chart Rendering",
     description:
       "Evaluating Chart.js vs D3 code generation quality across Claude, GPT-4, and Gemini for complex multi-series datasets.",
-    status: "completed",
     categoryId: "data",
     wrapperId: "standard-html",
     tags: ["chart.js", "d3", "interactive"],
@@ -126,7 +123,6 @@ export const seedExperimentRecords: ExperimentRecord[] = [
     title: "Multi-Step Form Wizard",
     description:
       "How well can LLMs build accessible multi-step form wizards with validation, progress indicators, and error handling?",
-    status: "draft",
     categoryId: "form",
     wrapperId: "component-mode",
     tags: ["forms", "a11y", "validation"],
@@ -138,7 +134,6 @@ export const seedExperimentRecords: ExperimentRecord[] = [
     title: "Transactional Email Layouts",
     description:
       "Comparing LLM-generated HTML email templates for order confirmations, password resets, and onboarding sequences.",
-    status: "active",
     categoryId: "email",
     wrapperId: "standard-html",
     tags: ["email", "html-email", "transactional"],
@@ -150,7 +145,6 @@ export const seedExperimentRecords: ExperimentRecord[] = [
     title: "Pricing Page Showdown",
     description:
       "Full pricing page with toggle, feature comparison table, and FAQ accordion tested across five models.",
-    status: "completed",
     categoryId: "landing",
     wrapperId: "standard-html",
     tags: ["pricing", "toggle", "comparison"],
@@ -321,7 +315,6 @@ export const seedExperiments: ExperimentListItem[] = [
     title: "Dashboard Widget Comparison",
     description:
       "Compare how different LLMs generate a responsive analytics dashboard card with chart integration and real-time data display.",
-    status: "active",
     categoryId: "ui",
     categoryName: "UI Components",
     categoryColor: "#60a5fa",
@@ -339,7 +332,6 @@ export const seedExperiments: ExperimentListItem[] = [
     title: "SaaS Hero Section Variants",
     description:
       "Testing hero section generation with gradient backgrounds, CTA placement, and animated illustrations across models.",
-    status: "active",
     categoryId: "landing",
     categoryName: "Landing Pages",
     categoryColor: "#e87461",
@@ -357,7 +349,6 @@ export const seedExperiments: ExperimentListItem[] = [
     title: "Interactive Chart Rendering",
     description:
       "Evaluating Chart.js vs D3 code generation quality across Claude, GPT-4, and Gemini for complex multi-series datasets.",
-    status: "completed",
     categoryId: "data",
     categoryName: "Data Viz",
     categoryColor: "#4ade80",
@@ -375,7 +366,6 @@ export const seedExperiments: ExperimentListItem[] = [
     title: "Multi-Step Form Wizard",
     description:
       "How well can LLMs build accessible multi-step form wizards with validation, progress indicators, and error handling?",
-    status: "draft",
     categoryId: "form",
     categoryName: "Forms",
     categoryColor: "#a78bfa",
@@ -393,7 +383,6 @@ export const seedExperiments: ExperimentListItem[] = [
     title: "Transactional Email Layouts",
     description:
       "Comparing LLM-generated HTML email templates for order confirmations, password resets, and onboarding sequences.",
-    status: "active",
     categoryId: "email",
     categoryName: "Email Templates",
     categoryColor: "#facc15",
@@ -411,7 +400,6 @@ export const seedExperiments: ExperimentListItem[] = [
     title: "Pricing Page Showdown",
     description:
       "Full pricing page with toggle, feature comparison table, and FAQ accordion tested across five models.",
-    status: "completed",
     categoryId: "landing",
     categoryName: "Landing Pages",
     categoryColor: "#e87461",
@@ -476,7 +464,6 @@ export function getExperimentWorkspace(experimentId: string): ExperimentWorkspac
     id: experiment.id,
     title: experiment.title,
     description: experiment.description,
-    status: experiment.status,
     categoryId: experiment.categoryId,
     categoryName: category?.name ?? "No category",
     categoryColor: category?.color ?? "#71717a",
