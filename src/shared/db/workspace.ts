@@ -40,6 +40,37 @@ export type CategoryManagerItem = {
   count: number;
 };
 
+export type ProviderManagerItem = {
+  id: string;
+  name: string;
+  color: string;
+  isActive: boolean;
+  modelCount: number;
+};
+
+export type ModelManagerItem = {
+  id: string;
+  providerId: string;
+  providerName: string;
+  providerColor: string;
+  name: string;
+  version: string;
+  comment: string;
+  isActive: boolean;
+  resultsCount: number;
+  avgRating: number | null;
+};
+
+export type WrapperManagerItem = {
+  id: string;
+  name: string;
+  template: string;
+  isDefault: boolean;
+  usageCount: number;
+  updatedAt: string;
+  updatedLabel: string;
+};
+
 function formatResultDate(value: string) {
   return new Date(value).toLocaleString("en-US", {
     month: "short",
@@ -160,6 +191,8 @@ export async function createModelEntry(input: {
   modelName: string;
   modelVersion: string;
   modelComment: string;
+  providerColor?: string;
+  isActive?: boolean;
 }) {
   const now = new Date().toISOString();
   const providerName = input.providerName.trim();
@@ -176,7 +209,7 @@ export async function createModelEntry(input: {
       const providerRecord: ProviderRecord = {
         id: slugify(providerName) || crypto.randomUUID(),
         name: providerName,
-        color: deriveProviderColor(providerName),
+        color: input.providerColor?.trim() || deriveProviderColor(providerName),
         isActive: true,
         createdAt: now,
       };
@@ -203,7 +236,7 @@ export async function createModelEntry(input: {
       name: modelName,
       version: modelVersion,
       comment: modelComment,
-      isActive: true,
+      isActive: input.isActive ?? true,
       createdAt: now,
     };
     await db.models.add(modelRecord);
@@ -211,6 +244,219 @@ export async function createModelEntry(input: {
   });
 
   return modelId;
+}
+
+export async function loadProvidersCatalog(): Promise<ProviderManagerItem[]> {
+  const [providers, models] = await Promise.all([db.providers.toArray(), db.models.toArray()]);
+  const counts = new Map<string, number>();
+
+  for (const model of models) {
+    counts.set(model.providerId, (counts.get(model.providerId) ?? 0) + 1);
+  }
+
+  return [...providers]
+    .sort((left, right) => left.name.localeCompare(right.name))
+    .map((provider) => ({
+      id: provider.id,
+      name: provider.name,
+      color: provider.color,
+      isActive: provider.isActive,
+      modelCount: counts.get(provider.id) ?? 0,
+    }));
+}
+
+export async function createProviderEntry(input: { name: string; color: string }) {
+  const now = new Date().toISOString();
+  const name = input.name.trim();
+
+  if (!name) {
+    throw new Error("Provider name is required.");
+  }
+
+  const existing = await db.providers.toArray();
+  const duplicate = existing.find((item) => normalizeKey(item.name) === normalizeKey(name));
+  if (duplicate) {
+    return duplicate.id;
+  }
+
+  const providerId = slugify(name) || crypto.randomUUID();
+  await db.providers.add({
+    id: providerId,
+    name,
+    color: input.color.trim() || deriveProviderColor(name),
+    isActive: true,
+    createdAt: now,
+  });
+
+  return providerId;
+}
+
+export async function updateProviderEntry(input: {
+  providerId: string;
+  name: string;
+  color: string;
+  isActive: boolean;
+}) {
+  await db.providers.update(input.providerId, {
+    name: input.name.trim(),
+    color: input.color.trim() || deriveProviderColor(input.name),
+    isActive: input.isActive,
+  });
+}
+
+export async function loadModelsCatalog(): Promise<ModelManagerItem[]> {
+  const [models, providers, results] = await Promise.all([db.models.toArray(), db.providers.toArray(), db.results.toArray()]);
+  const providersById = new Map(providers.map((provider) => [provider.id, provider]));
+  const stats = new Map<string, { count: number; ratedCount: number; ratingSum: number }>();
+
+  for (const result of results) {
+    const current = stats.get(result.modelId) ?? { count: 0, ratedCount: 0, ratingSum: 0 };
+    current.count += 1;
+    if (result.rating !== null) {
+      current.ratedCount += 1;
+      current.ratingSum += result.rating;
+    }
+    stats.set(result.modelId, current);
+  }
+
+  return [...models]
+    .sort((left, right) => {
+      const leftProvider = providersById.get(left.providerId)?.name ?? "";
+      const rightProvider = providersById.get(right.providerId)?.name ?? "";
+
+      return (
+        leftProvider.localeCompare(rightProvider) ||
+        left.name.localeCompare(right.name) ||
+        left.version.localeCompare(right.version)
+      );
+    })
+    .map((model) => {
+      const provider = providersById.get(model.providerId);
+      const modelStats = stats.get(model.id);
+
+      return {
+        id: model.id,
+        providerId: model.providerId,
+        providerName: provider?.name ?? "Unknown",
+        providerColor: provider?.color ?? "#5b8def",
+        name: model.name,
+        version: model.version,
+        comment: model.comment,
+        isActive: model.isActive,
+        resultsCount: modelStats?.count ?? 0,
+        avgRating:
+          modelStats && modelStats.ratedCount > 0 ? modelStats.ratingSum / modelStats.ratedCount : null,
+      };
+    });
+}
+
+export async function updateModelEntry(input: {
+  modelId: string;
+  providerId: string;
+  name: string;
+  version: string;
+  comment: string;
+  isActive: boolean;
+}) {
+  await db.models.update(input.modelId, {
+    providerId: input.providerId,
+    name: input.name.trim(),
+    version: input.version.trim(),
+    comment: input.comment.trim(),
+    isActive: input.isActive,
+  });
+}
+
+export async function updateModelActive(modelId: string, isActive: boolean) {
+  await db.models.update(modelId, { isActive });
+}
+
+export async function loadWrappersCatalog(): Promise<WrapperManagerItem[]> {
+  const [wrappers, experiments] = await Promise.all([db.wrappers.toArray(), db.experiments.toArray()]);
+  const counts = new Map<string, number>();
+
+  for (const experiment of experiments) {
+    if (experiment.wrapperId) {
+      counts.set(experiment.wrapperId, (counts.get(experiment.wrapperId) ?? 0) + 1);
+    }
+  }
+
+  return [...wrappers]
+    .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))
+    .map((wrapper) => ({
+      id: wrapper.id,
+      name: wrapper.name,
+      template: wrapper.template,
+      isDefault: wrapper.isDefault,
+      usageCount: counts.get(wrapper.id) ?? 0,
+      updatedAt: wrapper.updatedAt,
+      updatedLabel: formatUpdatedLabel(wrapper.updatedAt),
+    }));
+}
+
+export async function createWrapperEntry(input: {
+  name: string;
+  template: string;
+  isDefault: boolean;
+}) {
+  const now = new Date().toISOString();
+  const name = input.name.trim();
+  const template = input.template;
+
+  if (!template.includes("{{prompt}}")) {
+    throw new Error("Wrapper template must contain {{prompt}}.");
+  }
+
+  await db.transaction("rw", [db.wrappers], async () => {
+    if (input.isDefault) {
+      await db.wrappers.toCollection().modify({ isDefault: false, updatedAt: now });
+    }
+
+    await db.wrappers.add({
+      id: crypto.randomUUID(),
+      name,
+      template,
+      isDefault: input.isDefault,
+      createdAt: now,
+      updatedAt: now,
+    });
+  });
+}
+
+export async function updateWrapperEntry(input: {
+  wrapperId: string;
+  name: string;
+  template: string;
+  isDefault: boolean;
+}) {
+  const now = new Date().toISOString();
+
+  if (!input.template.includes("{{prompt}}")) {
+    throw new Error("Wrapper template must contain {{prompt}}.");
+  }
+
+  await db.transaction("rw", [db.wrappers], async () => {
+    if (input.isDefault) {
+      await db.wrappers.toCollection().modify({ isDefault: false, updatedAt: now });
+    }
+
+    await db.wrappers.update(input.wrapperId, {
+      name: input.name.trim(),
+      template: input.template,
+      isDefault: input.isDefault,
+      updatedAt: now,
+    });
+  });
+}
+
+export async function deleteWrapperEntry(wrapperId: string) {
+  const usageCount = await db.experiments.where("wrapperId").equals(wrapperId).count();
+
+  if (usageCount > 0) {
+    throw new Error("Wrapper is still used by experiments.");
+  }
+
+  await db.wrappers.delete(wrapperId);
 }
 
 export async function loadExperimentsList(): Promise<ExperimentListItem[]> {

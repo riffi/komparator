@@ -12,7 +12,8 @@ description: |
   на одних и тех же промптах.
 
   Флоу: пользователь создаёт эксперимент с промптом, копирует его в разные
-  LLM вместе с системной инструкцией вернуть один самодостаточный HTML-документ,
+  LLM вместе с системной инструкцией вернуть один HTML-документ
+  без пояснений вне него,
   при необходимости дополнительно обернув через wrapper, получает
   HTML-результаты, вставляет обратно и сравнивает side-by-side визуально.
 
@@ -63,6 +64,7 @@ entities:
       Стандартизирует условия эксперимента (формат ответа, ограничения, стиль).
       Содержит плейсхолдер {{prompt}} куда подставляется итоговый prompt:
       системная HTML-инструкция + текст prompt_version.prompt_text.
+      Системная инструкция не запрещает CDN и внешние ресурсы.
     fields:
       id:
         type: uuid
@@ -79,8 +81,8 @@ entities:
         label: Шаблон
         description: |
           Текст обёртки с плейсхолдером {{prompt}}.
-          Пример: "Respond with a single self-contained HTML file.
-          All CSS and JS inline. No external dependencies.\n\nTask:\n{{prompt}}"
+          Пример: "Return one HTML document and no explanation outside it.
+          External libraries and CDNs are allowed when useful.\n\nTask:\n{{prompt}}"
       is_default:
         type: boolean
         default: false

@@ -1,6 +1,8 @@
 import { Navigate, RouterProvider, createBrowserRouter } from "react-router-dom";
 import { ExperimentDetailPage } from "@/pages/experiment-detail-page/index";
 import { ExperimentsPage } from "@/pages/experiments-page/index";
+import { ModelsPage } from "@/pages/models-page/index";
+import { WrappersPage } from "@/pages/wrappers-page/index";
 import { appRoutes } from "@/shared/config/routes";
 import { AppShell } from "@/widgets/app-shell/ui/app-shell";
 
@@ -23,11 +25,11 @@ const router = createBrowserRouter([
       },
       {
         path: appRoutes.models,
-        element: <PlaceholderPage title="Models" />,
+        element: <ModelsPage />,
       },
       {
         path: appRoutes.wrappers,
-        element: <PlaceholderPage title="Wrappers" />,
+        element: <WrappersPage />,
       },
       {
         path: appRoutes.stats,

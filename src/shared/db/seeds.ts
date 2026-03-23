@@ -68,7 +68,7 @@ export const seedWrapperRecords: WrapperRecord[] = [
     id: "standard-html",
     name: "Standard HTML",
     template:
-      "Respond with a single self-contained HTML file. All CSS and JS inline. No external dependencies.\n\nTask:\n{{prompt}}",
+      "Return one HTML document and no explanation outside it. External libraries and CDNs are allowed when useful.\n\nTask:\n{{prompt}}",
     isDefault: true,
     createdAt: "2026-01-01T10:00:00.000Z",
     updatedAt: "2026-03-20T10:00:00.000Z",
