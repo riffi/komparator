@@ -71,6 +71,65 @@ export type WrapperManagerItem = {
   updatedLabel: string;
 };
 
+export type StatsSummaryCard = {
+  label: string;
+  value: string;
+  helper: string;
+};
+
+export type StatsLeaderboardItem = {
+  modelId: string;
+  providerName: string;
+  providerColor: string;
+  modelName: string;
+  modelVersion: string;
+  avgRating: number;
+  ratedCount: number;
+  winRate: number;
+};
+
+export type StatsProviderBreakdownItem = {
+  providerId: string;
+  providerName: string;
+  providerColor: string;
+  avgRating: number;
+  resultsCount: number;
+};
+
+export type StatsCategoryMatrixRow = {
+  categoryId: string;
+  categoryName: string;
+  color: string;
+  values: Array<{
+    modelId: string;
+    avgRating: number | null;
+    resultsCount: number;
+  }>;
+};
+
+export type StatsHistorySeries = {
+  modelId: string;
+  label: string;
+  color: string;
+  points: Array<{
+    date: string;
+    avgRating: number;
+  }>;
+};
+
+export type StatsDashboardData = {
+  summary: StatsSummaryCard[];
+  leaderboard: StatsLeaderboardItem[];
+  providerBreakdown: StatsProviderBreakdownItem[];
+  categoryModels: Array<{
+    modelId: string;
+    label: string;
+    providerColor: string;
+  }>;
+  categoryMatrix: StatsCategoryMatrixRow[];
+  ratingHistory: StatsHistorySeries[];
+};
+
 function formatResultDate(value: string) {
   return new Date(value).toLocaleString("en-US", {
     month: "short",
@@ -867,4 +926,239 @@ export async function createPromptVersionEntry(input: {
   });
 
   return promptVersionId;
+}
+
+export async function loadStatsDashboard(): Promise<StatsDashboardData> {
+  const [experiments, categories, promptVersions, results, models, providers] = await Promise.all([
+    db.experiments.toArray(),
+    db.categories.toArray(),
+    db.promptVersions.toArray(),
+    db.results.toArray(),
+    db.models.toArray(),
+    db.providers.toArray(),
+  ]);
+
+  const categoriesById = new Map(categories.map((item) => [item.id, item]));
+  const promptVersionsById = new Map(promptVersions.map((item) => [item.id, item]));
+  const experimentsById = new Map(experiments.map((item) => [item.id, item]));
+  const modelsById = new Map(models.map((item) => [item.id, item]));
+  const providersById = new Map(providers.map((item) => [item.id, item]));
+  const ratedResults = results.filter((item) => item.rating !== null);
+
+  const averageRating =
+    ratedResults.length > 0
+      ? ratedResults.reduce((sum, item) => sum + (item.rating ?? 0), 0) / ratedResults.length
+      : null;
+
+  const summary: StatsSummaryCard[] = [
+    {
+      label: "Experiments",
+      value: String(experiments.length),
+      helper: `${promptVersions.length} prompt version${promptVersions.length === 1 ? "" : "s"}`,
+    },
+    {
+      label: "Results",
+      value: String(results.length),
+      helper: `${ratedResults.length} rated`,
+    },
+    {
+      label: "Models used",
+      value: String(new Set(results.map((item) => item.modelId)).size),
+      helper: `${providers.length} provider${providers.length === 1 ? "" : "s"}`,
+    },
+    {
+      label: "Average rating",
+      value: averageRating ? averageRating.toFixed(1) : "—",
+      helper: averageRating ? "Across all rated results" : "No ratings yet",
+    },
+  ];
+
+  const modelStats = new Map<
+    string,
+    { sum: number; ratedCount: number; wins: number; experimentsParticipated: Set<string> }
+  >();
+
+  for (const result of ratedResults) {
+    const promptVersion = promptVersionsById.get(result.promptVersionId);
+    const experimentId = promptVersion?.experimentId;
+    const current = modelStats.get(result.modelId) ?? {
+      sum: 0,
+      ratedCount: 0,
+      wins: 0,
+      experimentsParticipated: new Set<string>(),
+    };
+
+    current.sum += result.rating ?? 0;
+    current.ratedCount += 1;
+    if (experimentId) {
+      current.experimentsParticipated.add(experimentId);
+    }
+    modelStats.set(result.modelId, current);
+  }
+
+  const experimentTopScores = new Map<string, number>();
+  const experimentWinningModels = new Map<string, Set<string>>();
+
+  for (const result of ratedResults) {
+    const promptVersion = promptVersionsById.get(result.promptVersionId);
+    const experimentId = promptVersion?.experimentId;
+    if (!experimentId || result.rating === null) {
+      continue;
+    }
+
+    const currentTop = experimentTopScores.get(experimentId);
+    if (currentTop === undefined || result.rating > currentTop) {
+      experimentTopScores.set(experimentId, result.rating);
+      experimentWinningModels.set(experimentId, new Set([result.modelId]));
+      continue;
+    }
+
+    if (result.rating === currentTop) {
+      experimentWinningModels.get(experimentId)?.add(result.modelId);
+    }
+  }
+
+  for (const modelIds of experimentWinningModels.values()) {
+    for (const modelId of modelIds) {
+      const current = modelStats.get(modelId);
+      if (current) {
+        current.wins += 1;
+      }
+    }
+  }
+
+  const leaderboard = [...modelStats.entries()]
+    .map(([modelId, stats]) => {
+      const model = modelsById.get(modelId);
+      const provider = model ? providersById.get(model.providerId) : undefined;
+
+      if (!model || !provider || stats.ratedCount === 0) {
+        return null;
+      }
+
+      return {
+        modelId,
+        providerName: provider.name,
+        providerColor: provider.color,
+        modelName: model.name,
+        modelVersion: model.version,
+        avgRating: stats.sum / stats.ratedCount,
+        ratedCount: stats.ratedCount,
+        winRate:
+          stats.experimentsParticipated.size > 0 ? (stats.wins / stats.experimentsParticipated.size) * 100 : 0,
+      } satisfies StatsLeaderboardItem;
+    })
+    .filter((item): item is StatsLeaderboardItem => item !== null)
+    .sort((left, right) => right.avgRating - left.avgRating || right.ratedCount - left.ratedCount);
+
+  const providerStats = new Map<string, { sum: number; ratedCount: number; resultsCount: number }>();
+
+  for (const result of results) {
+    const model = modelsById.get(result.modelId);
+    if (!model) {
+      continue;
+    }
+
+    const current = providerStats.get(model.providerId) ?? { sum: 0, ratedCount: 0, resultsCount: 0 };
+    current.resultsCount += 1;
+    if (result.rating !== null) {
+      current.sum += result.rating;
+      current.ratedCount += 1;
+    }
+    providerStats.set(model.providerId, current);
+  }
+
+  const providerBreakdown = [...providerStats.entries()]
+    .map(([providerId, stats]) => {
+      const provider = providersById.get(providerId);
+      if (!provider || stats.ratedCount === 0) {
+        return null;
+      }
+
+      return {
+        providerId,
+        providerName: provider.name,
+        providerColor: provider.color,
+        avgRating: stats.sum / stats.ratedCount,
+        resultsCount: stats.resultsCount,
+      } satisfies StatsProviderBreakdownItem;
+    })
+    .filter((item): item is StatsProviderBreakdownItem => item !== null)
+    .sort((left, right) => right.avgRating - left.avgRating);
+
+  const categoryModelStats = new Map<string, Map<string, { sum: number; ratedCount: number }>>();
+
+  for (const result of ratedResults) {
+    const promptVersion = promptVersionsById.get(result.promptVersionId);
+    const experiment = promptVersion ? experimentsById.get(promptVersion.experimentId) : undefined;
+    const categoryKey = experiment?.categoryId ?? "uncategorized";
+    const modelMap = categoryModelStats.get(categoryKey) ?? new Map<string, { sum: number; ratedCount: number }>();
+    const current = modelMap.get(result.modelId) ?? { sum: 0, ratedCount: 0 };
+    current.sum += result.rating ?? 0;
+    current.ratedCount += 1;
+    modelMap.set(result.modelId, current);
+    categoryModelStats.set(categoryKey, modelMap);
+  }
+
+  const topCategoryModels = leaderboard.slice(0, 5).map((item) => ({
+    modelId: item.modelId,
+    label: `${item.providerName} / ${item.modelName} ${item.modelVersion}`,
+    providerColor: item.providerColor,
+  }));
+
+  const categoryMatrix = [...categoryModelStats.entries()]
+    .map(([categoryId, stats]) => {
+      const category = categoryId === "uncategorized" ? null : categoriesById.get(categoryId);
+
+      return {
+        categoryId,
+        categoryName: category?.name ?? "No category",
+        color: category?.color ?? "#71717a",
+        values: topCategoryModels.map((model) => {
+          const current = stats.get(model.modelId);
+          return {
+            modelId: model.modelId,
+            avgRating: current && current.ratedCount > 0 ? current.sum / current.ratedCount : null,
+            resultsCount: current?.ratedCount ?? 0,
+          };
+        }),
+      } satisfies StatsCategoryMatrixRow;
+    })
+    .sort((left, right) => left.categoryName.localeCompare(right.categoryName));
+
+  const historyMap = new Map<string, Map<string, { sum: number; count: number }>>();
+
+  for (const result of ratedResults) {
+    const day = result.createdAt.slice(0, 10);
+    const series = historyMap.get(result.modelId) ?? new Map<string, { sum: number; count: number }>();
+    const current = series.get(day) ?? { sum: 0, count: 0 };
+    current.sum += result.rating ?? 0;
+    current.count += 1;
+    series.set(day, current);
+    historyMap.set(result.modelId, series);
+  }
+
+  const ratingHistory = leaderboard.slice(0, 4).map((item) => {
+    const series = historyMap.get(item.modelId) ?? new Map<string, { sum: number; count: number }>();
+    return {
+      modelId: item.modelId,
+      label: `${item.providerName} / ${item.modelName} ${item.modelVersion}`,
+      color: item.providerColor,
+      points: [...series.entries()]
+        .sort((left, right) => left[0].localeCompare(right[0]))
+        .map(([date, point]) => ({
+          date,
+          avgRating: point.sum / point.count,
+        })),
+    } satisfies StatsHistorySeries;
+  });
+
+  return {
+    summary,
+    leaderboard,
+    providerBreakdown,
+    categoryModels: topCategoryModels,
+    categoryMatrix,
+    ratingHistory,
+  };
 }

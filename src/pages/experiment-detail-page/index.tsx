@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronLeft,
   ChevronRight,
@@ -56,12 +56,14 @@ export function ExperimentDetailPage() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"results" | "prompt">("results");
   const [viewMode, setViewMode] = useState<"single" | "sbs">("single");
+  const [resultsSort, setResultsSort] = useState<"rating" | "date" | "model">("rating");
   const [selectedVersionId, setSelectedVersionId] = useState<string>("");
   const [selectedResultId, setSelectedResultId] = useState<string>("");
   const [slotAId, setSlotAId] = useState<string>("");
   const [slotBId, setSlotBId] = useState<string>("");
   const [lastSlot, setLastSlot] = useState<"a" | "b">("b");
   const [device, setDevice] = useState<keyof typeof deviceWidths>("desktop");
+  const [compareSplit, setCompareSplit] = useState(50);
   const [showCode, setShowCode] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
   const [showPreviewMenu, setShowPreviewMenu] = useState(false);
@@ -146,8 +148,24 @@ export function ExperimentDetailPage() {
       return [];
     }
 
-    return workspace.results.filter((item) => item.promptVersionNumber === activeVersion.versionNumber);
-  }, [selectedVersionId, workspace]);
+    const scoped = workspace.results.filter((item) => item.promptVersionNumber === activeVersion.versionNumber);
+
+    return [...scoped].sort((left, right) => {
+      switch (resultsSort) {
+        case "date":
+          return Date.parse(right.createdAt) - Date.parse(left.createdAt);
+        case "model":
+          return (
+            left.providerName.localeCompare(right.providerName) ||
+            left.modelName.localeCompare(right.modelName) ||
+            left.modelVersion.localeCompare(right.modelVersion)
+          );
+        case "rating":
+        default:
+          return (right.rating ?? -1) - (left.rating ?? -1) || Date.parse(right.createdAt) - Date.parse(left.createdAt);
+      }
+    });
+  }, [resultsSort, selectedVersionId, workspace]);
 
   useEffect(() => {
     if (!workspace?.promptVersions.length) {
@@ -600,12 +618,18 @@ export function ExperimentDetailPage() {
                   Prompt version v{activePrompt?.versionNumber ?? "-"}
                 </div>
               </div>
-              <button
-                type="button"
-                className="rounded-md border border-border/80 bg-code p-2 text-muted transition hover:text-text"
-              >
-                <ListFilter className="h-4 w-4" />
-              </button>
+              <div className="flex items-center gap-2">
+                <ListFilter className="h-4 w-4 text-dim" />
+                <select
+                  className="h-9 rounded-md border border-border/80 bg-code px-3 text-sm text-text outline-none focus:border-primary"
+                  value={resultsSort}
+                  onChange={(event) => setResultsSort(event.target.value as typeof resultsSort)}
+                >
+                  <option value="rating">By rating</option>
+                  <option value="date">By date</option>
+                  <option value="model">By model</option>
+                </select>
+              </div>
             </div>
             <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2">
               {hasResults ? (
@@ -755,9 +779,9 @@ export function ExperimentDetailPage() {
                   </div>
                   <div className="relative flex flex-wrap items-center gap-2">
                     <div className="flex rounded-md border border-border/80 bg-code p-1">
-                      <DeviceButton active={device === "mobile"} onClick={() => setDevice("mobile")} icon={Smartphone} label="375" />
-                      <DeviceButton active={device === "tablet"} onClick={() => setDevice("tablet")} icon={Tablet} label="768" />
-                      <DeviceButton active={device === "desktop"} onClick={() => setDevice("desktop")} icon={Monitor} label="Full" />
+                      <DeviceButton active={device === "mobile"} onClick={() => setDevice("mobile")} icon={Smartphone} label="Mobile" />
+                      <DeviceButton active={device === "tablet"} onClick={() => setDevice("tablet")} icon={Tablet} label="Tablet" />
+                      <DeviceButton active={device === "desktop"} onClick={() => setDevice("desktop")} icon={Monitor} label="Desktop" />
                     </div>
                     <Button variant="ghost" size="sm" onClick={() => setShowFullscreen(true)}>
                       <Expand className="h-4 w-4" />
@@ -804,7 +828,14 @@ export function ExperimentDetailPage() {
                   {viewMode === "single" ? (
                     <SinglePreviewCanvas result={selectedResult} device={device} showCode={showCode} />
                   ) : (
-                    <CompareCanvas slotA={slotA} slotB={slotB} device={device} showCode={showCode} />
+                    <CompareCanvas
+                      slotA={slotA}
+                      slotB={slotB}
+                      device={device}
+                      showCode={showCode}
+                      split={compareSplit}
+                      onSplitChange={setCompareSplit}
+                    />
                   )}
                 </div>
 
@@ -1372,9 +1403,9 @@ export function ExperimentDetailPage() {
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <div className="flex rounded-md border border-border/80 bg-code p-1">
-                  <DeviceButton active={device === "mobile"} onClick={() => setDevice("mobile")} icon={Smartphone} label="375" />
-                  <DeviceButton active={device === "tablet"} onClick={() => setDevice("tablet")} icon={Tablet} label="768" />
-                  <DeviceButton active={device === "desktop"} onClick={() => setDevice("desktop")} icon={Monitor} label="Full" />
+                  <DeviceButton active={device === "mobile"} onClick={() => setDevice("mobile")} icon={Smartphone} label="Mobile" />
+                  <DeviceButton active={device === "tablet"} onClick={() => setDevice("tablet")} icon={Tablet} label="Tablet" />
+                  <DeviceButton active={device === "desktop"} onClick={() => setDevice("desktop")} icon={Monitor} label="Desktop" />
                 </div>
                 <button
                   type="button"
@@ -1390,7 +1421,15 @@ export function ExperimentDetailPage() {
               {viewMode === "single" ? (
                 <SinglePreviewCanvas result={selectedResult} device={device} showCode={showCode} fullscreen />
               ) : (
-                <CompareCanvas slotA={slotA} slotB={slotB} device={device} showCode={showCode} fullscreen />
+                <CompareCanvas
+                  slotA={slotA}
+                  slotB={slotB}
+                  device={device}
+                  showCode={showCode}
+                  fullscreen
+                  split={compareSplit}
+                  onSplitChange={setCompareSplit}
+                />
               )}
             </div>
             {showNotes && viewMode === "single" ? (
@@ -1488,33 +1527,90 @@ function CompareCanvas({
   device,
   showCode,
   fullscreen = false,
+  split,
+  onSplitChange,
 }: {
   slotA?: WorkspaceResultItem;
   slotB?: WorkspaceResultItem;
   device: keyof typeof deviceWidths;
   showCode: boolean;
   fullscreen?: boolean;
+  split: number;
+  onSplitChange: (value: number) => void;
 }) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [dragging, setDragging] = useState(false);
+
+  useEffect(() => {
+    if (!dragging) {
+      return;
+    }
+
+    const onMouseMove = (event: MouseEvent) => {
+      const bounds = containerRef.current?.getBoundingClientRect();
+      if (!bounds) {
+        return;
+      }
+
+      const next = ((event.clientX - bounds.left) / bounds.width) * 100;
+      onSplitChange(Math.min(72, Math.max(28, next)));
+    };
+
+    const onMouseUp = () => setDragging(false);
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+  }, [dragging, onSplitChange]);
+
   return (
-    <div className={cn("grid h-full gap-4 xl:grid-cols-2", fullscreen ? "min-h-[640px]" : "min-h-[520px]")}>
-      <ComparePanel label="A" result={slotA} device={device} showCode={showCode} />
-      <ComparePanel label="B" result={slotB} device={device} showCode={showCode} accent="orange" />
+    <div
+      ref={containerRef}
+      className={cn(
+        "flex h-full min-h-full min-w-0 items-stretch gap-0",
+        fullscreen ? "min-h-[640px]" : "min-h-[520px]",
+      )}
+    >
+      <div className="min-h-0 min-w-0 self-stretch" style={{ width: `${split}%` }}>
+        <ComparePanel label="A" result={slotA} device={device} showCode={showCode} />
+      </div>
+      <button
+        type="button"
+        className={cn(
+          "group relative mx-2 flex w-3 shrink-0 cursor-col-resize items-center justify-center",
+          dragging && "opacity-100",
+        )}
+        onMouseDown={() => setDragging(true)}
+        aria-label="Resize comparison panels"
+      >
+        <span className="h-full w-px rounded-full bg-border/80 transition group-hover:bg-primary" />
+        <span className="absolute h-12 w-2 rounded-full bg-white/10 opacity-0 transition group-hover:opacity-100" />
+      </button>
+      <div className="min-h-0 min-w-0 flex-1 self-stretch">
+        <ComparePanel label="B" result={slotB} device={device} showCode={showCode} accent="orange" />
+      </div>
     </div>
   );
 }
 
 function ComparePanel({ label, result, device, showCode, accent = "blue" }: { label: "A" | "B"; result?: WorkspaceResultItem; device: keyof typeof deviceWidths; showCode: boolean; accent?: "blue" | "orange" }) {
   if (!result) {
-    return <div className="flex min-h-0 items-center justify-center rounded-lg border border-dashed border-border/80 bg-[#050608] font-mono text-sm text-dim">Select a result</div>;
+    return <div className="flex h-full min-h-0 items-center justify-center rounded-lg border border-dashed border-border/80 bg-[#050608] font-mono text-sm text-dim">Select a result</div>;
   }
 
   return (
-    <div className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-border/80 bg-[#050608]">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border/80 bg-[#050608]">
       <div className="flex items-center gap-2 border-b border-border/80 px-3 py-2">
         <span className={cn("rounded px-1.5 py-0.5 font-mono text-[10px]", accent === "blue" ? "bg-primary-soft/60 text-primary" : "bg-orange-500/10 text-orange-300")}>{label}</span>
         <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: result.providerColor }} />
-        <div className="truncate text-sm font-semibold text-text">{result.providerName} / {result.modelName} {result.modelVersion}</div>
-        <div className={cn("ml-auto font-mono text-sm", result.rating ? ratingToneClass(result.rating) : "text-dim")}>{result.rating ?? "—"}</div>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-semibold text-text">{result.providerName} / {result.modelName} {result.modelVersion}</div>
+          <div className="truncate text-[11px] text-dim">Attempt {result.attempt} • {result.modelComment || "No comment"}</div>
+        </div>
+        <div className={cn("font-mono text-sm", result.rating ? ratingToneClass(result.rating) : "text-dim")}>{result.rating ?? "—"}</div>
       </div>
       <div className="min-h-0 flex-1 overflow-auto p-3">
         {showCode ? (
