@@ -95,8 +95,64 @@ export type ModelRecord = {
   version: string;
   comment: string;
   isActive: boolean;
+  sourceType: "manual" | "catalog";
+  catalogModelId: string | null;
   createdAt: string;
   lastUsedAt: string | null;
+};
+
+export type CatalogStateRecord = {
+  id: "default";
+  version: string;
+  sourceLabel: string;
+  importedAt: string;
+  previousVersion: string | null;
+  presetDiffs: Array<{
+    presetId: string;
+    modelCountDelta: number;
+  }>;
+};
+
+export type CatalogProviderRecord = {
+  id: string;
+  canonicalSlug: string;
+  name: string;
+  color: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CatalogModelRecord = {
+  id: string;
+  providerCatalogId: string;
+  name: string;
+  version: string;
+  displayName: string;
+  aliases: string[];
+  status: "active" | "deprecated";
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CatalogPresetRecord = {
+  id: string;
+  title: string;
+  description: string;
+  modelIds: string[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ModelMatchRecord = {
+  id: string;
+  catalogModelId: string;
+  localModelId: string;
+  matchType: "exact" | "alias" | "normalized";
+  confidence: number;
+  status: "pending" | "linked" | "ignored";
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type ResultRecord = {
@@ -183,4 +239,14 @@ export type ExperimentWorkspace = {
   updatedAt: string;
   promptVersions: WorkspacePromptVersion[];
   results: WorkspaceResultItem[];
+};
+
+export type CatalogSummary = {
+  version: string | null;
+  sourceLabel: string | null;
+  importedAt: string | null;
+  providersCount: number;
+  modelsCount: number;
+  presetsCount: number;
+  matchesPendingCount: number;
 };

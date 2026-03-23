@@ -140,20 +140,34 @@ screens:
   models_list:
     blocks:
       - id: models_header
-        purpose: Page title 'Models', search input, 'Add provider' button, 'Add model' primary button.
+        purpose: "Top navigation header for the Models section. Shows page title and a two-tab switcher: 'My models' (default) and 'Catalog'. This header is visually lighter than content cards and reads as section navigation, not as another data block."
         columns: 12
-      - id: providers_section
-        purpose: "Providers displayed as a horizontal row of editable chips/cards. Each: provider color dot, name, model count badge. Click to filter models below. Separate provider cards below allow quick editing of name, color and active state."
+      - id: models_mine_toolbar
+        purpose: "Visible only on the 'My models' tab. Compact toolbar row with search input, 'Add provider' button and 'Add model' primary button."
+        columns: 12
+      - id: models_duplicates
+        purpose: "Visible only on the 'My models' tab when needed. Compact warning block listing possible duplicate matches between local models and catalog models, with actions to link or keep separate."
         columns: 12
       - id: models_table
-        purpose: "Table of models. Columns: provider (color dot + name), model name, version, comment/config, is_active toggle, results count (how many times used), avg rating across all results. Row actions: edit (opens model_form), duplicate (pre-fills form), deactivate toggle. Sortable by the visible columns and filterable by provider (via chips above)."
+        purpose: "Visible only on the 'My models' tab. Single bordered panel that contains the local model list and its filters in one place. Top area inside the same panel: source chips (`All sources`, `My models`, `Catalog-linked`, `Needs review`), provider filter chips, and compact provider cards with quick edit action. Below: table of local models. Columns: provider (color dot + name), model name, version/comment, results count, avg rating, source, active toggle. Row actions: edit, duplicate, deactivate toggle. Sortable by visible columns."
+        columns: 12
+      - id: catalog_overview
+        purpose: "Visible only on the 'Catalog' tab. Header row with 'Update catalog' and 'Import JSON' actions, plus compact summary stats: catalog version, number of providers, number of catalog models, number of presets, and pending duplicate-review count."
+        columns: 12
+      - id: catalog_models_list
+        purpose: "Visible only on the 'Catalog' tab. Left-side card showing the models currently included in the `popular` catalog list. The card header includes a compact count badge (for example `20 models`). The list has a fixed max height and scrolls internally instead of extending below the viewport. Each row shows provider color dot, model name, local-status hint (`already added` / `possible duplicate`) and an add action."
+        columns:
+          default: 7
+          mobile: 12
+      - id: catalog_presets
+        purpose: "Visible only on the 'Catalog' tab. Right-side card listing catalog presets. Each preset shows title, description, model count, optional delta badge after catalog update, and a `Load` action that imports those models into the local list."
         columns: 12
     title: Models
-    purpose: Manage LLM providers and models catalog.
+    purpose: Manage two related but distinct layers: the user's local working model list and the updatable external catalog.
   model_form:
     blocks:
       - id: model_form_content
-        purpose: "Form fields: provider (select from existing or create new inline with color picker), model name (text input with autocomplete from existing names), version (text input), comment (textarea, placeholder hints: 'thinking high, temp 0.7, etc.'), is_active toggle."
+        purpose: "Form fields for local models only: provider (select from existing or create new inline with color picker), model name, version, comment (placeholder hints: 'thinking high, temp 0.7, etc.'), is_active toggle. Catalog models are not edited here directly; they are added into the local list first and then can be edited as local entries."
         columns: 12
       - id: model_form_footer
         purpose: Cancel and Save buttons.

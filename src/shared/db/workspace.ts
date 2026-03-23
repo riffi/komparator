@@ -1,12 +1,18 @@
 import Dexie from "dexie";
 import { db } from "@/shared/db/schema";
 import {
+  CatalogModelRecord,
+  CatalogPresetRecord,
+  CatalogProviderRecord,
+  CatalogStateRecord,
+  CatalogSummary,
   ExperimentListItem,
   ExperimentsPageInput,
   ExperimentsPageResult,
   ExperimentRecord,
   ExperimentWorkspace,
   ModelRecord,
+  ModelMatchRecord,
   ProviderRecord,
   StatsModelRecord,
   StatsProviderRecord,
@@ -14,6 +20,9 @@ import {
   WorkspaceResultItem,
   WrapperRecord,
 } from "@/entities/experiment/model/types";
+import { builtInModelCatalog, CatalogImportPayload } from "@/shared/db/model-catalog";
+
+const MODEL_CATALOG_URL = "/catalog/models.json";
 
 export type SidebarCategoryItem = {
   id: string;
@@ -38,6 +47,10 @@ export type ModelSelectOption = {
   modelComment: string;
   isActive: boolean;
   lastUsedAt: string | null;
+  sourceType: "manual" | "catalog";
+  catalogModelId: string | null;
+  catalogDisplayName: string | null;
+  pendingMatchCount: number;
 };
 
 export type CategoryManagerItem = {
@@ -68,6 +81,46 @@ export type ModelManagerItem = {
   isActive: boolean;
   resultsCount: number;
   avgRating: number | null;
+  sourceType: "manual" | "catalog";
+  catalogModelId: string | null;
+  catalogDisplayName: string | null;
+  pendingMatchCount: number;
+};
+
+export type CatalogPresetItem = {
+  id: string;
+  title: string;
+  description: string;
+  modelCount: number;
+  modelCountDelta: number;
+};
+
+export type CatalogModelBrowserItem = {
+  id: string;
+  providerName: string;
+  providerColor: string;
+  displayName: string;
+  name: string;
+  version: string;
+  aliases: string[];
+  presetIds: string[];
+  status: "active" | "deprecated";
+  linkedLocalModelId: string | null;
+  linkedLocalLabel: string | null;
+  pendingMatchId: string | null;
+  pendingMatchConfidence: number | null;
+};
+
+export type ModelMatchItem = {
+  id: string;
+  catalogModelId: string;
+  catalogDisplayName: string;
+  catalogProviderName: string;
+  localModelId: string;
+  localLabel: string;
+  matchType: "exact" | "alias" | "normalized";
+  confidence: number;
+  status: "pending" | "linked" | "ignored";
 };
 
 export type WrapperManagerItem = {
@@ -174,6 +227,257 @@ function formatUpdatedLabel(value: string) {
 
   const diffWeeks = Math.round(diffDays / 7);
   return `${diffWeeks} week${diffWeeks > 1 ? "s" : ""} ago`;
+}
+
+function normalizeKey(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function normalizeLooseKey(value: string) {
+  return normalizeKey(value).replace(/[\s._-]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function slugify(value: string) {
+  return normalizeKey(value).replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+function deriveProviderColor(name: string) {
+  const key = normalizeKey(name);
+
+  if (key.includes("openai")) return "#5ec269";
+  if (key.includes("anthropic")) return "#e8755a";
+  if (key.includes("google")) return "#4a9eed";
+  if (key.includes("meta")) return "#a578e6";
+  if (key.includes("xai")) return "#9a9ca0";
+  if (key.includes("mistral")) return "#f59e0b";
+  if (key.includes("xiaomi")) return "#fb923c";
+
+  return "#5b8def";
+}
+
+function countLines(value: string) {
+  return value.split(/\r\n|\r|\n/).length;
+}
+
+function getLocalModelLabel(model: ModelRecord, providerName: string, catalogDisplayName?: string | null) {
+  const baseName = catalogDisplayName ?? `${model.name} ${model.version}`.trim();
+  const commentPart = model.comment ? ` • ${model.comment}` : "";
+  return `${providerName} / ${baseName}${commentPart}`;
+}
+
+export async function ensureCatalogReady() {
+  const current = await db.catalogState.get("default");
+  if (current) {
+    return;
+  }
+
+  try {
+    await syncRemoteCatalog();
+  } catch {
+    await importCatalogPayload(builtInModelCatalog);
+  }
+}
+
+async function recomputeModelMatches() {
+  const [catalogModels, catalogProviders, localModels, localProviders] = await Promise.all([
+    db.catalogModels.toArray(),
+    db.catalogProviders.toArray(),
+    db.models.toArray(),
+    db.providers.toArray(),
+  ]);
+
+  const catalogProvidersById = new Map(catalogProviders.map((item) => [item.id, item]));
+  const localProvidersById = new Map(localProviders.map((item) => [item.id, item]));
+  const nextMatches = new Map<string, ModelMatchRecord>();
+  const now = new Date().toISOString();
+
+  for (const catalogModel of catalogModels) {
+    const linkedLocal = localModels.find((item) => item.catalogModelId === catalogModel.id);
+    if (linkedLocal) {
+      continue;
+    }
+
+    const catalogProvider = catalogProvidersById.get(catalogModel.providerCatalogId);
+    if (!catalogProvider) {
+      continue;
+    }
+
+    const catalogProviderKey = normalizeLooseKey(catalogProvider.name);
+    const exactCatalogKey = normalizeLooseKey(`${catalogModel.name} ${catalogModel.version}`);
+    const aliasKeys = new Set([
+      exactCatalogKey,
+      normalizeLooseKey(catalogModel.displayName),
+      ...catalogModel.aliases.map((alias) => normalizeLooseKey(alias)),
+    ]);
+
+    for (const localModel of localModels) {
+      if (localModel.catalogModelId) {
+        continue;
+      }
+
+      const localProvider = localProvidersById.get(localModel.providerId);
+      if (!localProvider || normalizeLooseKey(localProvider.name) !== catalogProviderKey) {
+        continue;
+      }
+
+      const localKey = normalizeLooseKey(`${localModel.name} ${localModel.version}`);
+      let matchType: ModelMatchRecord["matchType"] | null = null;
+      let confidence = 0;
+
+      if (localKey === exactCatalogKey) {
+        matchType = "exact";
+        confidence = 1;
+      } else if (aliasKeys.has(localKey)) {
+        matchType = "alias";
+        confidence = 0.94;
+      } else if (
+        normalizeLooseKey(localModel.version) === normalizeLooseKey(catalogModel.version) &&
+        (normalizeLooseKey(localModel.name).includes(normalizeLooseKey(catalogModel.name)) ||
+          normalizeLooseKey(catalogModel.name).includes(normalizeLooseKey(localModel.name)))
+      ) {
+        matchType = "normalized";
+        confidence = 0.78;
+      }
+
+      if (!matchType) {
+        continue;
+      }
+
+      const id = `${catalogModel.id}__${localModel.id}`;
+      nextMatches.set(id, {
+        id,
+        catalogModelId: catalogModel.id,
+        localModelId: localModel.id,
+        matchType,
+        confidence,
+        status: "pending",
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+  }
+
+  const previous = await db.modelMatches.toArray();
+  for (const item of previous) {
+    if ((item.status === "ignored" || item.status === "linked") && !nextMatches.has(item.id)) {
+      nextMatches.set(item.id, item);
+    } else if (item.status !== "pending" && nextMatches.has(item.id)) {
+      nextMatches.set(item.id, { ...nextMatches.get(item.id)!, status: item.status, createdAt: item.createdAt });
+    }
+  }
+
+  await db.transaction("rw", [db.modelMatches], async () => {
+    await db.modelMatches.clear();
+    if (nextMatches.size > 0) {
+      await db.modelMatches.bulkAdd([...nextMatches.values()]);
+    }
+  });
+}
+
+async function importCatalogPayload(payload: CatalogImportPayload) {
+  const now = new Date().toISOString();
+
+  await db.transaction(
+    "rw",
+    [db.catalogState, db.catalogProviders, db.catalogModels, db.catalogPresets],
+    async () => {
+      const previousState = await db.catalogState.get("default");
+      const previousPresets = await db.catalogPresets.toArray();
+      const previousPresetCounts = new Map(previousPresets.map((preset) => [preset.id, preset.modelIds.length]));
+
+      await db.catalogProviders.clear();
+      await db.catalogModels.clear();
+      await db.catalogPresets.clear();
+
+      const providerRows: CatalogProviderRecord[] = payload.providers.map((provider) => ({
+        id: provider.id,
+        canonicalSlug: provider.canonicalSlug,
+        name: provider.name,
+        color: provider.color,
+        isActive: provider.isActive ?? true,
+        createdAt: now,
+        updatedAt: now,
+      }));
+      const modelRows: CatalogModelRecord[] = payload.models.map((model) => ({
+        id: model.id,
+        providerCatalogId: model.providerId,
+        name: model.name,
+        version: model.version,
+        displayName: model.displayName,
+        aliases: model.aliases ?? [],
+        status: model.status ?? "active",
+        createdAt: now,
+        updatedAt: now,
+      }));
+      const presetRows: CatalogPresetRecord[] = payload.presets.map((preset) => ({
+        id: preset.id,
+        title: preset.title,
+        description: preset.description,
+        modelIds: preset.modelIds,
+        createdAt: now,
+        updatedAt: now,
+      }));
+      const presetDiffs = payload.presets.map((preset) => ({
+        presetId: preset.id,
+        modelCountDelta: preset.modelIds.length - (previousPresetCounts.get(preset.id) ?? preset.modelIds.length),
+      }));
+      const stateRow: CatalogStateRecord = {
+        id: "default",
+        version: payload.version,
+        sourceLabel: payload.sourceLabel,
+        importedAt: now,
+        previousVersion: previousState?.version ?? null,
+        presetDiffs,
+      };
+
+      if (providerRows.length > 0) {
+        await db.catalogProviders.bulkAdd(providerRows);
+      }
+      if (modelRows.length > 0) {
+        await db.catalogModels.bulkAdd(modelRows);
+      }
+      if (presetRows.length > 0) {
+        await db.catalogPresets.bulkAdd(presetRows);
+      }
+      await db.catalogState.put(stateRow);
+    },
+  );
+
+  await recomputeModelMatches();
+}
+
+function assertCatalogPayload(value: unknown): asserts value is CatalogImportPayload {
+  if (!value || typeof value !== "object") {
+    throw new Error("Invalid catalog payload.");
+  }
+
+  const payload = value as Record<string, unknown>;
+  if (
+    typeof payload.version !== "string" ||
+    typeof payload.sourceLabel !== "string" ||
+    !Array.isArray(payload.providers) ||
+    !Array.isArray(payload.models) ||
+    !Array.isArray(payload.presets)
+  ) {
+    throw new Error("Invalid catalog payload.");
+  }
+}
+
+async function fetchRemoteCatalogPayload() {
+  const response = await fetch(MODEL_CATALOG_URL, {
+    cache: "no-store",
+    headers: {
+      Accept: "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Catalog request failed with status ${response.status}.`);
+  }
+
+  const payload = (await response.json()) as unknown;
+  assertCatalogPayload(payload);
+  return payload;
 }
 
 async function rebuildStatsAggregates() {
@@ -309,6 +613,249 @@ async function rebuildStatsAggregates() {
   });
 }
 
+export async function syncRemoteCatalog() {
+  const payload = await fetchRemoteCatalogPayload();
+  await importCatalogPayload(payload);
+}
+
+export async function importCatalogFromJsonText(jsonText: string) {
+  const payload = JSON.parse(jsonText) as CatalogImportPayload;
+  if (
+    !payload ||
+    typeof payload.version !== "string" ||
+    !Array.isArray(payload.providers) ||
+    !Array.isArray(payload.models) ||
+    !Array.isArray(payload.presets)
+  ) {
+    throw new Error("Invalid catalog JSON.");
+  }
+
+  await importCatalogPayload(payload);
+}
+
+export async function loadCatalogSummary(): Promise<CatalogSummary> {
+  await ensureCatalogReady();
+
+  const [state, providersCount, modelsCount, presetsCount, pendingMatches] = await Promise.all([
+    db.catalogState.get("default"),
+    db.catalogProviders.count(),
+    db.catalogModels.count(),
+    db.catalogPresets.count(),
+    db.modelMatches.where("status").equals("pending").count(),
+  ]);
+
+  return {
+    version: state?.version ?? null,
+    sourceLabel: state?.sourceLabel ?? null,
+    importedAt: state?.importedAt ?? null,
+    providersCount,
+    modelsCount,
+    presetsCount,
+    matchesPendingCount: pendingMatches,
+  };
+}
+
+export async function loadCatalogPresets(): Promise<CatalogPresetItem[]> {
+  await ensureCatalogReady();
+  const [presets, state] = await Promise.all([db.catalogPresets.toArray(), db.catalogState.get("default")]);
+  const presetDiffs = new Map((state?.presetDiffs ?? []).map((item) => [item.presetId, item.modelCountDelta]));
+
+  return presets
+    .sort((left, right) => left.title.localeCompare(right.title))
+    .map((preset) => ({
+      id: preset.id,
+      title: preset.title,
+      description: preset.description,
+      modelCount: preset.modelIds.length,
+      modelCountDelta: presetDiffs.get(preset.id) ?? 0,
+    }));
+}
+
+export async function createModelFromCatalog(catalogModelId: string) {
+  await ensureCatalogReady();
+
+  const [catalogModel, catalogProvider] = await Promise.all([
+    db.catalogModels.get(catalogModelId),
+    (async () => {
+      const model = await db.catalogModels.get(catalogModelId);
+      return model ? db.catalogProviders.get(model.providerCatalogId) : Promise.resolve(undefined);
+    })(),
+  ]);
+
+  if (!catalogModel || !catalogProvider) {
+    throw new Error("Catalog model not found.");
+  }
+
+  const existing = await db.models.where("catalogModelId").equals(catalogModel.id).first();
+  if (existing) {
+    return existing.id;
+  }
+
+  const modelId = await createModelEntry({
+    providerName: catalogProvider.name,
+    providerColor: catalogProvider.color,
+    modelName: catalogModel.name,
+    modelVersion: catalogModel.version,
+    modelComment: "",
+    isActive: true,
+    sourceType: "catalog",
+    catalogModelId: catalogModel.id,
+  });
+
+  await db.modelMatches
+    .where("[catalogModelId+localModelId]")
+    .between([catalogModel.id, Dexie.minKey], [catalogModel.id, Dexie.maxKey])
+    .modify({ status: "linked", updatedAt: new Date().toISOString() });
+
+  return modelId;
+}
+
+export async function applyCatalogPreset(presetId: string) {
+  await ensureCatalogReady();
+  const preset = await db.catalogPresets.get(presetId);
+  if (!preset) {
+    throw new Error("Preset not found.");
+  }
+
+  const createdModelIds: string[] = [];
+  for (const modelId of preset.modelIds) {
+    createdModelIds.push(await createModelFromCatalog(modelId));
+  }
+
+  await recomputeModelMatches();
+  return createdModelIds;
+}
+
+export async function loadCatalogBrowserItems(): Promise<CatalogModelBrowserItem[]> {
+  await ensureCatalogReady();
+
+  const [catalogModels, catalogProviders, localModels, localProviders, matches, presets] = await Promise.all([
+    db.catalogModels.toArray(),
+    db.catalogProviders.toArray(),
+    db.models.toArray(),
+    db.providers.toArray(),
+    db.modelMatches.toArray(),
+    db.catalogPresets.toArray(),
+  ]);
+
+  const catalogProvidersById = new Map(catalogProviders.map((item) => [item.id, item]));
+  const localProvidersById = new Map(localProviders.map((item) => [item.id, item]));
+  const localModelsByCatalogId = new Map(localModels.filter((item) => item.catalogModelId).map((item) => [item.catalogModelId!, item]));
+  const pendingMatchesByCatalogId = new Map(matches.filter((item) => item.status === "pending").map((item) => [item.catalogModelId, item]));
+  const presetIdsByModelId = new Map<string, string[]>();
+
+  for (const preset of presets) {
+    for (const modelId of preset.modelIds) {
+      const presetIds = presetIdsByModelId.get(modelId) ?? [];
+      presetIds.push(preset.id);
+      presetIdsByModelId.set(modelId, presetIds);
+    }
+  }
+
+  return catalogModels
+    .map((catalogModel) => {
+      const catalogProvider = catalogProvidersById.get(catalogModel.providerCatalogId);
+      if (!catalogProvider) {
+        return null;
+      }
+
+      const linkedLocal = localModelsByCatalogId.get(catalogModel.id) ?? null;
+      const pendingMatch = pendingMatchesByCatalogId.get(catalogModel.id) ?? null;
+      const linkedProvider = linkedLocal ? localProvidersById.get(linkedLocal.providerId) : null;
+
+      return {
+        id: catalogModel.id,
+        providerName: catalogProvider.name,
+        providerColor: catalogProvider.color,
+        displayName: catalogModel.displayName,
+        name: catalogModel.name,
+        version: catalogModel.version,
+        aliases: catalogModel.aliases,
+        presetIds: presetIdsByModelId.get(catalogModel.id) ?? [],
+        status: catalogModel.status,
+        linkedLocalModelId: linkedLocal?.id ?? null,
+        linkedLocalLabel:
+          linkedLocal && linkedProvider ? getLocalModelLabel(linkedLocal, linkedProvider.name, catalogModel.displayName) : null,
+        pendingMatchId: pendingMatch?.id ?? null,
+        pendingMatchConfidence: pendingMatch?.confidence ?? null,
+      } satisfies CatalogModelBrowserItem;
+    })
+    .filter((item): item is CatalogModelBrowserItem => item !== null)
+    .sort((left, right) => left.providerName.localeCompare(right.providerName) || left.displayName.localeCompare(right.displayName));
+}
+
+export async function loadModelMatches(): Promise<ModelMatchItem[]> {
+  await ensureCatalogReady();
+
+  const [matches, catalogModels, catalogProviders, localModels, localProviders] = await Promise.all([
+    db.modelMatches.toArray(),
+    db.catalogModels.toArray(),
+    db.catalogProviders.toArray(),
+    db.models.toArray(),
+    db.providers.toArray(),
+  ]);
+
+  const catalogModelsById = new Map(catalogModels.map((item) => [item.id, item]));
+  const catalogProvidersById = new Map(catalogProviders.map((item) => [item.id, item]));
+  const localModelsById = new Map(localModels.map((item) => [item.id, item]));
+  const localProvidersById = new Map(localProviders.map((item) => [item.id, item]));
+
+  return matches
+    .filter((item) => item.status === "pending")
+    .map((match) => {
+      const catalogModel = catalogModelsById.get(match.catalogModelId);
+      const localModel = localModelsById.get(match.localModelId);
+      if (!catalogModel || !localModel) {
+        return null;
+      }
+
+      const catalogProvider = catalogProvidersById.get(catalogModel.providerCatalogId);
+      const localProvider = localProvidersById.get(localModel.providerId);
+      if (!catalogProvider || !localProvider) {
+        return null;
+      }
+
+      return {
+        id: match.id,
+        catalogModelId: catalogModel.id,
+        catalogDisplayName: catalogModel.displayName,
+        catalogProviderName: catalogProvider.name,
+        localModelId: localModel.id,
+        localLabel: getLocalModelLabel(localModel, localProvider.name),
+        matchType: match.matchType,
+        confidence: match.confidence,
+        status: match.status,
+      } satisfies ModelMatchItem;
+    })
+    .filter((item): item is ModelMatchItem => item !== null)
+    .sort((left, right) => right.confidence - left.confidence || left.catalogDisplayName.localeCompare(right.catalogDisplayName));
+}
+
+export async function resolveModelMatch(matchId: string, action: "link" | "ignore") {
+  const match = await db.modelMatches.get(matchId);
+  if (!match) {
+    throw new Error("Match not found.");
+  }
+
+  if (action === "ignore") {
+    await db.modelMatches.update(matchId, {
+      status: "ignored",
+      updatedAt: new Date().toISOString(),
+    });
+    return;
+  }
+
+  await db.models.update(match.localModelId, {
+    catalogModelId: match.catalogModelId,
+    sourceType: "catalog",
+  });
+  await db.modelMatches
+    .where("[catalogModelId+localModelId]")
+    .equals([match.catalogModelId, match.localModelId])
+    .modify({ status: "linked", updatedAt: new Date().toISOString() });
+  await recomputeModelMatches();
+}
+
 export async function loadSidebarCategories(): Promise<SidebarCategoryItem[]> {
   const [categories, experiments] = await Promise.all([db.categories.toArray(), db.experiments.toArray()]);
   const counts = new Map<string, number>();
@@ -358,8 +905,22 @@ export async function loadWrapperOptions(): Promise<SelectOption[]> {
 }
 
 export async function loadModelOptions(): Promise<ModelSelectOption[]> {
-  const [models, providers] = await Promise.all([db.models.toArray(), db.providers.toArray()]);
+  await ensureCatalogReady();
+  const [models, providers, catalogModels, matches] = await Promise.all([
+    db.models.toArray(),
+    db.providers.toArray(),
+    db.catalogModels.toArray(),
+    db.modelMatches.toArray(),
+  ]);
   const providersById = new Map(providers.map((provider) => [provider.id, provider]));
+  const catalogModelsById = new Map(catalogModels.map((item) => [item.id, item]));
+  const pendingCounts = new Map<string, number>();
+
+  for (const match of matches) {
+    if (match.status === "pending") {
+      pendingCounts.set(match.localModelId, (pendingCounts.get(match.localModelId) ?? 0) + 1);
+    }
+  }
 
   return [...models]
     .sort((left, right) => {
@@ -387,6 +948,10 @@ export async function loadModelOptions(): Promise<ModelSelectOption[]> {
         modelComment: model.comment,
         isActive: model.isActive,
         lastUsedAt: model.lastUsedAt,
+        sourceType: model.sourceType,
+        catalogModelId: model.catalogModelId,
+        catalogDisplayName: model.catalogModelId ? catalogModelsById.get(model.catalogModelId)?.displayName ?? null : null,
+        pendingMatchCount: pendingCounts.get(model.id) ?? 0,
       };
     });
 }
@@ -398,6 +963,8 @@ export async function createModelEntry(input: {
   modelComment: string;
   providerColor?: string;
   isActive?: boolean;
+  sourceType?: "manual" | "catalog";
+  catalogModelId?: string | null;
 }) {
   const now = new Date().toISOString();
   const providerName = input.providerName.trim();
@@ -442,12 +1009,16 @@ export async function createModelEntry(input: {
       version: modelVersion,
       comment: modelComment,
       isActive: input.isActive ?? true,
+      sourceType: input.sourceType ?? "manual",
+      catalogModelId: input.catalogModelId ?? null,
       createdAt: now,
       lastUsedAt: null,
     };
     await db.models.add(modelRecord);
     return modelRecord.id;
   });
+
+  await recomputeModelMatches();
 
   return modelId;
 }
@@ -511,9 +1082,24 @@ export async function updateProviderEntry(input: {
 }
 
 export async function loadModelsCatalog(): Promise<ModelManagerItem[]> {
-  const [models, providers, results] = await Promise.all([db.models.toArray(), db.providers.toArray(), db.results.toArray()]);
+  await ensureCatalogReady();
+  const [models, providers, results, catalogModels, matches] = await Promise.all([
+    db.models.toArray(),
+    db.providers.toArray(),
+    db.results.toArray(),
+    db.catalogModels.toArray(),
+    db.modelMatches.toArray(),
+  ]);
   const providersById = new Map(providers.map((provider) => [provider.id, provider]));
+  const catalogModelsById = new Map(catalogModels.map((item) => [item.id, item]));
+  const pendingCounts = new Map<string, number>();
   const stats = new Map<string, { count: number; ratedCount: number; ratingSum: number }>();
+
+  for (const match of matches) {
+    if (match.status === "pending") {
+      pendingCounts.set(match.localModelId, (pendingCounts.get(match.localModelId) ?? 0) + 1);
+    }
+  }
 
   for (const result of results) {
     const current = stats.get(result.modelId) ?? { count: 0, ratedCount: 0, ratingSum: 0 };
@@ -552,6 +1138,10 @@ export async function loadModelsCatalog(): Promise<ModelManagerItem[]> {
         resultsCount: modelStats?.count ?? 0,
         avgRating:
           modelStats && modelStats.ratedCount > 0 ? modelStats.ratingSum / modelStats.ratedCount : null,
+        sourceType: model.sourceType,
+        catalogModelId: model.catalogModelId,
+        catalogDisplayName: model.catalogModelId ? catalogModelsById.get(model.catalogModelId)?.displayName ?? null : null,
+        pendingMatchCount: pendingCounts.get(model.id) ?? 0,
       };
     });
 }
@@ -572,6 +1162,7 @@ export async function updateModelEntry(input: {
     isActive: input.isActive,
   });
 
+  await recomputeModelMatches();
   await rebuildStatsAggregates();
 }
 
@@ -968,30 +1559,6 @@ export async function createExperimentWithInitialPrompt(input: {
   });
 
   return experimentId;
-}
-
-function normalizeKey(value: string) {
-  return value.trim().toLowerCase();
-}
-
-function slugify(value: string) {
-  return normalizeKey(value).replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-}
-
-function deriveProviderColor(name: string) {
-  const key = normalizeKey(name);
-
-  if (key.includes("openai")) return "#5ec269";
-  if (key.includes("anthropic")) return "#e8755a";
-  if (key.includes("google")) return "#4a9eed";
-  if (key.includes("meta")) return "#a578e6";
-  if (key.includes("xai")) return "#9a9ca0";
-
-  return "#5b8def";
-}
-
-function countLines(value: string) {
-  return value.split(/\r\n|\r|\n/).length;
 }
 
 export async function createResultEntry(input: {

@@ -1,13 +1,25 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, Copy, Pencil, Plus, Search, X } from "lucide-react";
+import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowDown, ArrowUp, Copy, Download, Link2, Pencil, Plus, RefreshCcw, Search, Upload, X } from "lucide-react";
 import { cn } from "@/shared/lib/cn";
 import {
+  applyCatalogPreset,
+  CatalogModelBrowserItem,
+  CatalogPresetItem,
+  createModelFromCatalog,
   createModelEntry,
   createProviderEntry,
+  importCatalogFromJsonText,
+  loadCatalogBrowserItems,
+  loadCatalogPresets,
+  loadCatalogSummary,
   loadModelsCatalog,
+  loadModelMatches,
+  ModelMatchItem,
   loadProvidersCatalog,
   ModelManagerItem,
   ProviderManagerItem,
+  resolveModelMatch,
+  syncRemoteCatalog,
   updateModelActive,
   updateModelEntry,
   updateProviderEntry,
@@ -17,14 +29,31 @@ import { Select } from "@/shared/ui/select";
 
 export function ModelsPage() {
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<"mine" | "catalog">("mine");
   const [providers, setProviders] = useState<ProviderManagerItem[]>([]);
   const [models, setModels] = useState<ModelManagerItem[]>([]);
+  const [catalogItems, setCatalogItems] = useState<CatalogModelBrowserItem[]>([]);
+  const [presets, setPresets] = useState<CatalogPresetItem[]>([]);
+  const [matchItems, setMatchItems] = useState<ModelMatchItem[]>([]);
+  const [catalogSummary, setCatalogSummary] = useState<{
+    version: string | null;
+    sourceLabel: string | null;
+    importedAt: string | null;
+    providersCount: number;
+    modelsCount: number;
+    presetsCount: number;
+    matchesPendingCount: number;
+  } | null>(null);
   const [query, setQuery] = useState("");
   const [providerFilter, setProviderFilter] = useState("all");
+  const [sourceFilter, setSourceFilter] = useState<"all" | "manual" | "catalog" | "review">("all");
   const [showProviderModal, setShowProviderModal] = useState(false);
   const [showModelModal, setShowModelModal] = useState(false);
   const [savingProvider, setSavingProvider] = useState(false);
   const [savingModel, setSavingModel] = useState(false);
+  const [catalogBusy, setCatalogBusy] = useState<"" | "sync" | "preset" | "import" | "create" | "match">("");
+  const [catalogError, setCatalogError] = useState("");
+  const importInputRef = useRef<HTMLInputElement | null>(null);
   const [duplicatingModelId, setDuplicatingModelId] = useState<string | null>(null);
   const [editingProvider, setEditingProvider] = useState<ProviderManagerItem | null>(null);
   const [editingModel, setEditingModel] = useState<ModelManagerItem | null>(null);
@@ -44,9 +73,20 @@ export function ModelsPage() {
 
   const refreshData = useCallback(async () => {
     setLoading(true);
-    const [nextProviders, nextModels] = await Promise.all([loadProvidersCatalog(), loadModelsCatalog()]);
+    const [nextProviders, nextModels, nextCatalogSummary, nextPresets, nextCatalogItems, nextMatchItems] = await Promise.all([
+      loadProvidersCatalog(),
+      loadModelsCatalog(),
+      loadCatalogSummary(),
+      loadCatalogPresets(),
+      loadCatalogBrowserItems(),
+      loadModelMatches(),
+    ]);
     setProviders(nextProviders);
     setModels(nextModels);
+    setCatalogSummary(nextCatalogSummary);
+    setPresets(nextPresets);
+    setCatalogItems(nextCatalogItems);
+    setMatchItems(nextMatchItems);
     setLoading(false);
   }, []);
 
@@ -73,11 +113,17 @@ export function ModelsPage() {
 
     const filtered = models.filter((model) => {
       const matchesProvider = providerFilter === "all" ? true : model.providerId === providerFilter;
+      const matchesSource =
+        sourceFilter === "all"
+          ? true
+          : sourceFilter === "review"
+            ? model.pendingMatchCount > 0
+            : model.sourceType === sourceFilter;
       const matchesSearch = search
         ? [model.providerName, model.name, model.version, model.comment].join(" ").toLowerCase().includes(search)
         : true;
 
-      return matchesProvider && matchesSearch;
+      return matchesProvider && matchesSource && matchesSearch;
     });
 
     const direction = sortDirection === "asc" ? 1 : -1;
@@ -109,7 +155,87 @@ export function ModelsPage() {
 
       return ((Number(left.isActive) - Number(right.isActive)) || left.name.localeCompare(right.name)) * direction;
     });
-  }, [models, providerFilter, query, sortBy, sortDirection]);
+  }, [models, providerFilter, query, sortBy, sortDirection, sourceFilter]);
+
+  const popularCatalogItems = useMemo(
+    () => catalogItems.filter((item) => item.presetIds.includes("popular")).slice(0, 20),
+    [catalogItems],
+  );
+
+  const onImportCatalogClick = () => {
+    importInputRef.current?.click();
+  };
+
+  const onImportCatalogFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) {
+      return;
+    }
+
+    setCatalogBusy("import");
+    setCatalogError("");
+    try {
+      await importCatalogFromJsonText(await file.text());
+      await refreshData();
+    } catch (error) {
+      setCatalogError(error instanceof Error ? error.message : "Catalog import failed.");
+    } finally {
+      setCatalogBusy("");
+    }
+  };
+
+  const onSyncCatalog = async () => {
+    setCatalogBusy("sync");
+    setCatalogError("");
+    try {
+      await syncRemoteCatalog();
+      await refreshData();
+    } catch (error) {
+      setCatalogError(error instanceof Error ? error.message : "Catalog sync failed.");
+    } finally {
+      setCatalogBusy("");
+    }
+  };
+
+  const onApplyPreset = async (presetId: string) => {
+    setCatalogBusy("preset");
+    setCatalogError("");
+    try {
+      await applyCatalogPreset(presetId);
+      await refreshData();
+    } catch (error) {
+      setCatalogError(error instanceof Error ? error.message : "Preset apply failed.");
+    } finally {
+      setCatalogBusy("");
+    }
+  };
+
+  const onAddCatalogModel = async (catalogModelId: string) => {
+    setCatalogBusy("create");
+    setCatalogError("");
+    try {
+      await createModelFromCatalog(catalogModelId);
+      await refreshData();
+    } catch (error) {
+      setCatalogError(error instanceof Error ? error.message : "Could not add catalog model.");
+    } finally {
+      setCatalogBusy("");
+    }
+  };
+
+  const onResolveMatch = async (matchId: string, action: "link" | "ignore") => {
+    setCatalogBusy("match");
+    setCatalogError("");
+    try {
+      await resolveModelMatch(matchId, action);
+      await refreshData();
+    } catch (error) {
+      setCatalogError(error instanceof Error ? error.message : "Could not resolve match.");
+    } finally {
+      setCatalogBusy("");
+    }
+  };
 
   const openCreateProvider = () => {
     setEditingProvider(null);
@@ -243,111 +369,309 @@ export function ModelsPage() {
 
   return (
     <section className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/80 bg-surface/70 px-5 py-4 shadow-panel">
-        <div>
-          <h1 className="font-mono text-2xl font-semibold text-text">Models</h1>
-          <p className="mt-1 text-sm text-muted">Provider and model catalog used by experiment results.</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <label className="inline-flex h-10 items-center gap-2 rounded-md border border-border/80 bg-code px-3 text-sm text-muted">
-            <Search className="h-4 w-4" />
-            <input
-              className="w-[240px] bg-transparent text-text outline-none placeholder:text-dim"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search models or providers..."
-            />
-          </label>
-          <Button variant="ghost" onClick={openCreateProvider}>
-            <Plus className="h-4 w-4" />
-            Add provider
-          </Button>
-          <Button onClick={openCreateModel}>
-            <Plus className="h-4 w-4" />
-            Add model
-          </Button>
-        </div>
-      </div>
+      <input ref={importInputRef} type="file" accept=".json,application/json" className="hidden" onChange={onImportCatalogFile} />
 
-      <div className="rounded-xl border border-border/80 bg-surface/70 p-4 shadow-panel">
-        <div className="mb-3 flex flex-wrap items-center gap-2">
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <div className="font-mono text-[11px] uppercase tracking-[0.16em] text-dim">Reference data</div>
+            <h1 className="mt-2 text-3xl font-semibold tracking-[-0.03em] text-text">Models</h1>
+            <p className="mt-2 max-w-2xl text-sm text-muted">
+              Switch between your working model list and the remote catalog without burying your actual models under catalog content.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 border-b border-border/80 pb-3">
           <button
             type="button"
-            className={cn("rounded-full border px-3 py-1.5 text-sm transition", providerFilter === "all" ? "border-primary bg-primary-soft/50 text-primary" : "border-border/80 text-muted")}
-            onClick={() => setProviderFilter("all")}
+            className={cn(
+              "rounded-full px-4 py-2 text-sm font-medium transition",
+              activeTab === "mine"
+                ? "bg-primary text-white shadow-[0_10px_30px_rgba(91,141,239,0.35)]"
+                : "bg-white/5 text-muted hover:text-text",
+            )}
+            onClick={() => setActiveTab("mine")}
           >
-            All providers
+            My models
           </button>
-          {providers.map((provider) => (
-            <button
-              key={provider.id}
-              type="button"
-              className={cn("inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition", providerFilter === provider.id ? "border-primary bg-primary-soft/50 text-primary" : "border-border/80 text-muted hover:text-text")}
-              onClick={() => setProviderFilter((current) => (current === provider.id ? "all" : provider.id))}
-            >
-              <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: provider.color }} />
-              <span>{provider.name}</span>
-              <span className="font-mono text-[11px] text-dim">{provider.modelCount}</span>
-            </button>
-          ))}
+          <button
+            type="button"
+            className={cn(
+              "rounded-full px-4 py-2 text-sm font-medium transition",
+              activeTab === "catalog"
+                ? "bg-primary text-white shadow-[0_10px_30px_rgba(91,141,239,0.35)]"
+                : "bg-white/5 text-muted hover:text-text",
+            )}
+            onClick={() => setActiveTab("catalog")}
+          >
+            Catalog
+          </button>
         </div>
+      </div>
 
-        <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
-          {providers.map((provider) => (
-            <div key={provider.id} className="rounded-lg border border-border/80 bg-code px-4 py-3">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: provider.color }} />
-                    <div className="truncate text-sm font-semibold text-text">{provider.name}</div>
+      {activeTab === "catalog" ? (
+        <div className="rounded-xl border border-border/80 bg-surface/70 p-5 shadow-panel">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <div className="font-mono text-xs uppercase tracking-[0.14em] text-dim">Catalog</div>
+              <h2 className="mt-2 text-lg font-semibold text-text">Remote model source and starter presets</h2>
+              <p className="mt-1 text-sm text-muted">
+                Update the external catalog, inspect Arena-based presets, and add catalog models into your local workspace.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="ghost" onClick={() => void onSyncCatalog()} disabled={catalogBusy !== ""}>
+                <RefreshCcw className="h-4 w-4" />
+                {catalogBusy === "sync" ? "Updating..." : "Update catalog"}
+              </Button>
+              <Button variant="ghost" onClick={onImportCatalogClick} disabled={catalogBusy !== ""}>
+                <Upload className="h-4 w-4" />
+                {catalogBusy === "import" ? "Importing..." : "Import JSON"}
+              </Button>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-4">
+            <CatalogStat label="Version" value={catalogSummary?.version ?? "—"} helper={catalogSummary?.sourceLabel ?? "No catalog"} />
+            <CatalogStat label="Catalog models" value={String(catalogSummary?.modelsCount ?? 0)} helper={`${catalogSummary?.providersCount ?? 0} providers`} />
+            <CatalogStat label="Presets" value={String(catalogSummary?.presetsCount ?? 0)} helper="Starter bundles" />
+            <CatalogStat label="Needs review" value={String(catalogSummary?.matchesPendingCount ?? 0)} helper="Possible duplicates" />
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+            <div className="rounded-lg border border-border/80 bg-code/70 p-4">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div>
+                  <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Models list</div>
+                  <div className="mt-1 text-sm text-muted">Models currently included in the `popular` catalog list.</div>
+                </div>
+                <div className="rounded-full border border-border/80 bg-surface/40 px-3 py-1 font-mono text-[11px] text-dim">
+                  {popularCatalogItems.length} models
+                </div>
+              </div>
+              <div className="max-h-[min(56vh,560px)] space-y-2 overflow-y-auto pr-1">
+                {popularCatalogItems.map((item) => (
+                  <div key={item.id} className="flex items-center justify-between gap-3 rounded-lg border border-border/80 bg-surface/40 px-3 py-2">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-text">
+                        <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.providerColor }} />
+                        <span className="truncate">{item.displayName}</span>
+                      </div>
+                      <div className="mt-1 text-xs text-muted">
+                        {item.providerName}
+                        {item.linkedLocalLabel ? " • already added" : item.pendingMatchId ? " • possible duplicate" : ""}
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      variant={item.linkedLocalModelId ? "ghost" : "default"}
+                      onClick={() => void onAddCatalogModel(item.id)}
+                      disabled={catalogBusy !== "" || Boolean(item.linkedLocalModelId)}
+                    >
+                      {item.linkedLocalModelId ? "Added" : "Add"}
+                    </Button>
                   </div>
-                  <div className="mt-1 text-xs text-muted">
-                    {provider.modelCount} model{provider.modelCount === 1 ? "" : "s"} • {provider.isActive ? "Active" : "Inactive"}
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-border/80 bg-code/70 p-4">
+              <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Presets</div>
+              <div className="mt-1 text-sm text-muted">Load curated starter bundles into your local model list.</div>
+              <div className="mt-3 space-y-2">
+                {presets.map((preset) => (
+                  <div key={preset.id} className="rounded-lg border border-border/80 bg-surface/40 p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-text">{preset.title}</div>
+                        <div className="mt-1 text-xs text-muted">{preset.description}</div>
+                        <div className="mt-1 flex items-center gap-2 font-mono text-[11px] text-dim">
+                          <span>{preset.modelCount} models</span>
+                          {preset.modelCountDelta !== 0 ? (
+                            <span className={cn("rounded-full px-2 py-0.5", preset.modelCountDelta > 0 ? "bg-emerald-500/10 text-emerald-300" : "bg-amber-500/10 text-amber-300")}>
+                              {preset.modelCountDelta > 0 ? `+${preset.modelCountDelta}` : preset.modelCountDelta}
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                      <Button type="button" variant="ghost" onClick={() => void onApplyPreset(preset.id)} disabled={catalogBusy !== ""}>
+                        <Download className="h-4 w-4" />
+                        Load
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {catalogError ? <div className="mt-4 text-sm text-red-300">{catalogError}</div> : null}
+        </div>
+      ) : null}
+
+      {activeTab === "mine" ? (
+        <>
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/80 bg-surface/70 px-5 py-4 shadow-panel">
+            <div>
+              <h2 className="font-mono text-2xl font-semibold text-text">My models</h2>
+              <p className="mt-1 text-sm text-muted">Provider and model catalog actually used by your experiment results.</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="inline-flex h-10 items-center gap-2 rounded-md border border-border/80 bg-code px-3 text-sm text-muted">
+                <Search className="h-4 w-4" />
+                <input
+                  className="w-[240px] bg-transparent text-text outline-none placeholder:text-dim"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Search models or providers..."
+                />
+              </label>
+              <Button variant="ghost" onClick={openCreateProvider}>
+                <Plus className="h-4 w-4" />
+                Add provider
+              </Button>
+              <Button onClick={openCreateModel}>
+                <Plus className="h-4 w-4" />
+                Add model
+              </Button>
+            </div>
+          </div>
+
+          {matchItems.length ? (
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 shadow-panel">
+              <div className="flex items-center gap-2 text-sm font-semibold text-amber-200">
+                <Link2 className="h-4 w-4" />
+                Possible duplicates
+              </div>
+              <div className="mt-3 space-y-2">
+                {matchItems.slice(0, 4).map((match) => (
+                  <div key={match.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/80 bg-surface/40 px-3 py-2">
+                    <div className="min-w-0 text-sm text-muted">
+                      <span className="text-text">{match.catalogProviderName} / {match.catalogDisplayName}</span>
+                      {" -> "}
+                      <span className="text-text">{match.localLabel}</span>
+                      <span className="ml-2 font-mono text-[11px] text-dim">{Math.round(match.confidence * 100)}%</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button type="button" variant="ghost" onClick={() => void onResolveMatch(match.id, "ignore")} disabled={catalogBusy !== ""}>
+                        Keep separate
+                      </Button>
+                      <Button type="button" onClick={() => void onResolveMatch(match.id, "link")} disabled={catalogBusy !== ""}>
+                        Link
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          <div className="overflow-hidden rounded-xl border border-border/80 bg-surface/70 shadow-panel">
+            <div className="border-b border-border/80 px-4 py-4">
+              <div className="flex flex-wrap items-center gap-2">
+                {(["all", "manual", "catalog", "review"] as const).map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    className={cn(
+                      "rounded-full border px-3 py-1.5 text-sm transition",
+                      sourceFilter === value ? "border-primary bg-primary-soft/50 text-primary" : "border-border/80 text-muted",
+                    )}
+                    onClick={() => setSourceFilter(value)}
+                  >
+                    {value === "all" ? "All sources" : value === "manual" ? "My models" : value === "catalog" ? "Catalog-linked" : "Needs review"}
+                  </button>
+                ))}
+              </div>
+
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  className={cn("rounded-full border px-3 py-1.5 text-sm transition", providerFilter === "all" ? "border-primary bg-primary-soft/50 text-primary" : "border-border/80 text-muted")}
+                  onClick={() => setProviderFilter("all")}
+                >
+                  All providers
+                </button>
+                {providers.map((provider) => (
+                  <button
+                    key={provider.id}
+                    type="button"
+                    className={cn("inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition", providerFilter === provider.id ? "border-primary bg-primary-soft/50 text-primary" : "border-border/80 text-muted hover:text-text")}
+                    onClick={() => setProviderFilter((current) => (current === provider.id ? "all" : provider.id))}
+                  >
+                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: provider.color }} />
+                    <span>{provider.name}</span>
+                    <span className="font-mono text-[11px] text-dim">{provider.modelCount}</span>
+                  </button>
+                ))}
+              </div>
+
+              <div className="mt-4 grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
+                {providers.map((provider) => (
+                  <div key={provider.id} className="rounded-lg border border-border/80 bg-code px-4 py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: provider.color }} />
+                          <div className="truncate text-sm font-semibold text-text">{provider.name}</div>
+                        </div>
+                        <div className="mt-1 text-xs text-muted">
+                          {provider.modelCount} model{provider.modelCount === 1 ? "" : "s"} • {provider.isActive ? "Active" : "Inactive"}
+                        </div>
+                      </div>
+                      <button type="button" className="text-muted transition hover:text-text" onClick={() => openEditProvider(provider)} aria-label={`Edit ${provider.name}`}>
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_120px_120px_120px_120px_128px] gap-3 border-b border-border/80 px-4 py-3 font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
+              <SortHeader label="Model" active={sortBy === "model"} direction={sortDirection} onClick={() => toggleSort("model")} />
+              <SortHeader label="Provider" active={sortBy === "provider"} direction={sortDirection} onClick={() => toggleSort("provider")} />
+              <SortHeader label="Usage" active={sortBy === "usage"} direction={sortDirection} onClick={() => toggleSort("usage")} />
+              <SortHeader label="Avg rating" active={sortBy === "rating"} direction={sortDirection} onClick={() => toggleSort("rating")} />
+              <div>Source</div>
+              <SortHeader label="Status" active={sortBy === "status"} direction={sortDirection} onClick={() => toggleSort("status")} />
+              <div />
+            </div>
+            <div className="divide-y divide-border/70">
+              {loading ? <div className="px-4 py-6 text-sm text-muted">Loading models...</div> : filteredModels.length ? filteredModels.map((model) => (
+                <div key={model.id} className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_120px_120px_120px_120px_128px] items-center gap-3 px-4 py-3">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-semibold text-text">{model.name} {model.version}</div>
+                    <div className="truncate text-xs text-muted">
+                      {model.comment || "No comment"}
+                      {model.pendingMatchCount > 0 ? ` • ${model.pendingMatchCount} possible match` : ""}
+                    </div>
+                  </div>
+                  <div className="min-w-0"><div className="flex items-center gap-2 text-sm text-text"><span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: model.providerColor }} /><span className="truncate">{model.providerName}</span></div></div>
+                  <div className="text-sm text-muted">{model.resultsCount}</div>
+                  <div className="font-mono text-sm text-text">{model.avgRating ? model.avgRating.toFixed(1) : "—"}</div>
+                  <div className="text-xs text-muted">
+                    <div>{model.sourceType === "catalog" ? "Catalog" : "Manual"}</div>
+                    <div className="truncate">{model.catalogDisplayName ?? "—"}</div>
+                  </div>
+                  <button type="button" className={cn("justify-self-start rounded-full px-2.5 py-1 text-xs font-medium transition", model.isActive ? "bg-emerald-500/10 text-emerald-300" : "bg-white/5 text-muted")} onClick={() => void updateModelActive(model.id, !model.isActive).then(refreshData)}>
+                    {model.isActive ? "Active" : "Inactive"}
+                  </button>
+                  <div className="flex items-center justify-end gap-2">
+                    <button type="button" className="text-muted transition hover:text-text" onClick={() => duplicateModel(model)} aria-label={`Duplicate ${model.name}`}>
+                      <Copy className="h-4 w-4" />
+                    </button>
+                    <button type="button" className="text-muted transition hover:text-text" onClick={() => openEditModel(model)} aria-label={`Edit ${model.name}`}>
+                      <Pencil className="h-4 w-4" />
+                    </button>
                   </div>
                 </div>
-                <button type="button" className="text-muted transition hover:text-text" onClick={() => openEditProvider(provider)} aria-label={`Edit ${provider.name}`}>
-                  <Pencil className="h-4 w-4" />
-                </button>
-              </div>
+              )) : <div className="px-4 py-6 text-sm text-muted">No models match the current filters.</div>}
             </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="overflow-hidden rounded-xl border border-border/80 bg-surface/70 shadow-panel">
-        <div className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_120px_120px_120px_128px] gap-3 border-b border-border/80 px-4 py-3 font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
-          <SortHeader label="Model" active={sortBy === "model"} direction={sortDirection} onClick={() => toggleSort("model")} />
-          <SortHeader label="Provider" active={sortBy === "provider"} direction={sortDirection} onClick={() => toggleSort("provider")} />
-          <SortHeader label="Usage" active={sortBy === "usage"} direction={sortDirection} onClick={() => toggleSort("usage")} />
-          <SortHeader label="Avg rating" active={sortBy === "rating"} direction={sortDirection} onClick={() => toggleSort("rating")} />
-          <SortHeader label="Status" active={sortBy === "status"} direction={sortDirection} onClick={() => toggleSort("status")} />
-          <div />
-        </div>
-        <div className="divide-y divide-border/70">
-          {loading ? <div className="px-4 py-6 text-sm text-muted">Loading models...</div> : filteredModels.length ? filteredModels.map((model) => (
-            <div key={model.id} className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_120px_120px_120px_128px] items-center gap-3 px-4 py-3">
-              <div className="min-w-0">
-                <div className="truncate text-sm font-semibold text-text">{model.name} {model.version}</div>
-                <div className="truncate text-xs text-muted">{model.comment || "No comment"}</div>
-              </div>
-              <div className="min-w-0"><div className="flex items-center gap-2 text-sm text-text"><span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: model.providerColor }} /><span className="truncate">{model.providerName}</span></div></div>
-              <div className="text-sm text-muted">{model.resultsCount}</div>
-              <div className="font-mono text-sm text-text">{model.avgRating ? model.avgRating.toFixed(1) : "—"}</div>
-              <button type="button" className={cn("justify-self-start rounded-full px-2.5 py-1 text-xs font-medium transition", model.isActive ? "bg-emerald-500/10 text-emerald-300" : "bg-white/5 text-muted")} onClick={() => void updateModelActive(model.id, !model.isActive).then(refreshData)}>
-                {model.isActive ? "Active" : "Inactive"}
-              </button>
-              <div className="flex items-center justify-end gap-2">
-                <button type="button" className="text-muted transition hover:text-text" onClick={() => duplicateModel(model)} aria-label={`Duplicate ${model.name}`}>
-                  <Copy className="h-4 w-4" />
-                </button>
-                <button type="button" className="text-muted transition hover:text-text" onClick={() => openEditModel(model)} aria-label={`Edit ${model.name}`}>
-                  <Pencil className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-          )) : <div className="px-4 py-6 text-sm text-muted">No models match the current filters.</div>}
-        </div>
-      </div>
+          </div>
+        </>
+      ) : null}
 
       {showProviderModal ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
@@ -395,6 +719,16 @@ export function ModelsPage() {
         </div>
       ) : null}
     </section>
+  );
+}
+
+function CatalogStat({ label, value, helper }: { label: string; value: string; helper: string }) {
+  return (
+    <div className="rounded-lg border border-border/80 bg-code/70 px-4 py-3">
+      <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">{label}</div>
+      <div className="mt-2 text-xl font-semibold text-text">{value}</div>
+      <div className="mt-1 text-xs text-muted">{helper}</div>
+    </div>
   );
 }
 

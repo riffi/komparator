@@ -1,8 +1,13 @@
 import Dexie, { type Table } from "dexie";
 import {
+  CatalogModelRecord,
+  CatalogPresetRecord,
+  CatalogProviderRecord,
+  CatalogStateRecord,
   CategoryRecord,
   ExperimentRecord,
   ModelRecord,
+  ModelMatchRecord,
   PromptVersionRecord,
   ProviderRecord,
   ResultRecord,
@@ -19,6 +24,11 @@ export class KomparatorDb extends Dexie {
   promptVersions!: Table<PromptVersionRecord, string>;
   providers!: Table<ProviderRecord, string>;
   models!: Table<ModelRecord, string>;
+  catalogState!: Table<CatalogStateRecord, string>;
+  catalogProviders!: Table<CatalogProviderRecord, string>;
+  catalogModels!: Table<CatalogModelRecord, string>;
+  catalogPresets!: Table<CatalogPresetRecord, string>;
+  modelMatches!: Table<ModelMatchRecord, string>;
   results!: Table<ResultRecord, string>;
   statsWorkspace!: Table<StatsWorkspaceRecord, string>;
   statsModels!: Table<StatsModelRecord, string>;
@@ -96,7 +106,7 @@ export class KomparatorDb extends Dexie {
         experiments: "id, title, categoryId, wrapperId, createdAt, updatedAt",
         promptVersions: "id, experimentId, [experimentId+versionNumber]",
         providers: "id, name, isActive",
-        models: "id, providerId, [providerId+name+version+comment], isActive, lastUsedAt",
+        models: "id, providerId, [providerId+name+version+comment], isActive, sourceType, catalogModelId, lastUsedAt",
         results: "id, promptVersionId, modelId, [promptVersionId+modelId+attempt], createdAt, rating",
         statsWorkspace: "id, updatedAt",
         statsModels: "modelId, updatedAt",
@@ -228,6 +238,49 @@ export class KomparatorDb extends Dexie {
           await tx.table("statsProviders").bulkAdd([...providerStats.values()]);
         }
       });
+
+    this.version(6)
+      .stores({
+        categories: "id, name, sortOrder",
+        wrappers: "id, name, isDefault, updatedAt",
+        experiments: "id, title, categoryId, wrapperId, createdAt, updatedAt",
+        promptVersions: "id, experimentId, [experimentId+versionNumber]",
+        providers: "id, name, isActive",
+        models: "id, providerId, [providerId+name+version+comment], isActive, sourceType, catalogModelId, lastUsedAt",
+        catalogState: "id, version, importedAt",
+        catalogProviders: "id, canonicalSlug, name, isActive",
+        catalogModels: "id, providerCatalogId, displayName, status",
+        catalogPresets: "id, title",
+        modelMatches: "id, catalogModelId, localModelId, status, [catalogModelId+localModelId]",
+        results: "id, promptVersionId, modelId, [promptVersionId+modelId+attempt], createdAt, rating",
+        statsWorkspace: "id, updatedAt",
+        statsModels: "modelId, updatedAt",
+        statsProviders: "providerId, updatedAt",
+      })
+      .upgrade(async (tx) => {
+        await tx.table("models").toCollection().modify((model) => {
+          model.sourceType = model.sourceType ?? "manual";
+          model.catalogModelId = model.catalogModelId ?? null;
+        });
+      });
+
+    this.version(7).stores({
+      categories: "id, name, sortOrder",
+      wrappers: "id, name, isDefault, updatedAt",
+      experiments: "id, title, categoryId, wrapperId, createdAt, updatedAt",
+      promptVersions: "id, experimentId, [experimentId+versionNumber]",
+      providers: "id, name, isActive",
+      models: "id, providerId, [providerId+name+version+comment], isActive, sourceType, catalogModelId, lastUsedAt",
+      catalogState: "id, version, importedAt",
+      catalogProviders: "id, canonicalSlug, name, isActive",
+      catalogModels: "id, providerCatalogId, displayName, status",
+      catalogPresets: "id, title",
+      modelMatches: "id, catalogModelId, localModelId, status, [catalogModelId+localModelId]",
+      results: "id, promptVersionId, modelId, [promptVersionId+modelId+attempt], createdAt, rating",
+      statsWorkspace: "id, updatedAt",
+      statsModels: "modelId, updatedAt",
+      statsProviders: "providerId, updatedAt",
+    });
   }
 }
 

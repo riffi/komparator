@@ -1,7 +1,12 @@
 import {
+  CatalogModelRecord,
+  CatalogPresetRecord,
+  CatalogProviderRecord,
+  CatalogStateRecord,
   CategoryRecord,
   ExperimentRecord,
   ModelRecord,
+  ModelMatchRecord,
   PromptVersionRecord,
   ProviderRecord,
   ResultRecord,
@@ -25,6 +30,11 @@ type BackupPayload = {
     promptVersions: PromptVersionRecord[];
     providers: ProviderRecord[];
     models: ModelRecord[];
+    catalogState: CatalogStateRecord[];
+    catalogProviders: CatalogProviderRecord[];
+    catalogModels: CatalogModelRecord[];
+    catalogPresets: CatalogPresetRecord[];
+    modelMatches: ModelMatchRecord[];
     results: ResultRecord[];
   };
 };
@@ -42,7 +52,20 @@ function assertBackupPayload(value: unknown): asserts value is BackupPayload {
     throw new Error("Invalid backup metadata.");
   }
 
-  const requiredKeys = ["categories", "wrappers", "experiments", "promptVersions", "providers", "models", "results"];
+  const requiredKeys = [
+    "categories",
+    "wrappers",
+    "experiments",
+    "promptVersions",
+    "providers",
+    "models",
+    "catalogState",
+    "catalogProviders",
+    "catalogModels",
+    "catalogPresets",
+    "modelMatches",
+    "results",
+  ];
   if (!data || !requiredKeys.every((key) => Array.isArray(data[key]))) {
     throw new Error("Invalid backup payload.");
   }
@@ -61,13 +84,31 @@ function downloadBlob(blob: Blob, filename: string) {
 }
 
 export async function exportDatabaseToZip() {
-  const [categories, wrappers, experiments, promptVersions, providers, models, results] = await Promise.all([
+  const [
+    categories,
+    wrappers,
+    experiments,
+    promptVersions,
+    providers,
+    models,
+    catalogState,
+    catalogProviders,
+    catalogModels,
+    catalogPresets,
+    modelMatches,
+    results,
+  ] = await Promise.all([
     db.categories.toArray(),
     db.wrappers.toArray(),
     db.experiments.toArray(),
     db.promptVersions.toArray(),
     db.providers.toArray(),
     db.models.toArray(),
+    db.catalogState.toArray(),
+    db.catalogProviders.toArray(),
+    db.catalogModels.toArray(),
+    db.catalogPresets.toArray(),
+    db.modelMatches.toArray(),
     db.results.toArray(),
   ]);
 
@@ -84,6 +125,11 @@ export async function exportDatabaseToZip() {
       promptVersions,
       providers,
       models,
+      catalogState,
+      catalogProviders,
+      catalogModels,
+      catalogPresets,
+      modelMatches,
       results,
     },
   };
@@ -102,9 +148,27 @@ export async function importDatabaseFromZip(file: File) {
 
   await db.transaction(
     "rw",
-    [db.categories, db.wrappers, db.experiments, db.promptVersions, db.providers, db.models, db.results],
+    [
+      db.categories,
+      db.wrappers,
+      db.experiments,
+      db.promptVersions,
+      db.providers,
+      db.models,
+      db.catalogState,
+      db.catalogProviders,
+      db.catalogModels,
+      db.catalogPresets,
+      db.modelMatches,
+      db.results,
+    ],
     async () => {
       await db.results.clear();
+      await db.modelMatches.clear();
+      await db.catalogPresets.clear();
+      await db.catalogModels.clear();
+      await db.catalogProviders.clear();
+      await db.catalogState.clear();
       await db.models.clear();
       await db.providers.clear();
       await db.promptVersions.clear();
@@ -118,6 +182,11 @@ export async function importDatabaseFromZip(file: File) {
       await db.promptVersions.bulkAdd(backup.data.promptVersions);
       await db.providers.bulkAdd(backup.data.providers);
       await db.models.bulkAdd(backup.data.models);
+      await db.catalogState.bulkAdd(backup.data.catalogState);
+      await db.catalogProviders.bulkAdd(backup.data.catalogProviders);
+      await db.catalogModels.bulkAdd(backup.data.catalogModels);
+      await db.catalogPresets.bulkAdd(backup.data.catalogPresets);
+      await db.modelMatches.bulkAdd(backup.data.modelMatches);
       await db.results.bulkAdd(backup.data.results);
     },
   );

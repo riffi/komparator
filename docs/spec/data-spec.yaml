@@ -211,8 +211,9 @@ entities:
   llm_model:
     label: LLM-модель
     description: |
-      Конкретная конфигурация модели, используемая в эксперименте.
-      Разделена на: провайдер → название модели → версия → режим работы.
+      Локальная рабочая запись модели, используемая в эксперименте.
+      Это именно пользовательский список моделей, а не внешний каталог.
+      Запись может быть создана вручную или добавлена из remote catalog.
       Одна и та же модель с разными настройками thinking — это разные записи.
     fields:
       id:
@@ -246,15 +247,162 @@ entities:
         default: true
         label: Активна
         description: Показывать ли модель в списке выбора
+      source_type:
+        type: string
+        required: true
+        label: Источник
+        description: "`manual` для созданной пользователем записи или `catalog` для записи, добавленной из внешнего каталога"
+      catalog_model_id:
+        type: string
+        label: Связь с каталогом
+        description: Идентификатор catalog_model, если локальная запись была связана с внешним каталогом
       created_at:
         type: datetime
         required: true
         default: now
+      last_used_at:
+        type: datetime
+        label: Последнее использование
+        description: Используется для сортировки recent в выборе модели
     unique_constraints:
       - - provider_id
         - name
         - version
         - comment
+  catalog_state:
+    label: Состояние каталога
+    description: |
+      Служебная запись состояния внешнего каталога моделей.
+      Хранит текущую импортированную версию, прошлую версию и diff по пресетам.
+    fields:
+      id:
+        type: string
+        pk: true
+      version:
+        type: string
+        required: true
+      source_label:
+        type: string
+      imported_at:
+        type: datetime
+        required: true
+      previous_version:
+        type: string
+      preset_diffs:
+        type: json
+        description: Массив изменений размера пресетов после последнего обновления каталога
+  catalog_provider:
+    label: Провайдер каталога
+    description: Канонический provider из внешнего JSON-каталога.
+    fields:
+      id:
+        type: string
+        pk: true
+      canonical_slug:
+        type: string
+        required: true
+      name:
+        type: string
+        required: true
+      color:
+        type: string
+      is_active:
+        type: boolean
+        default: true
+      created_at:
+        type: datetime
+        required: true
+      updated_at:
+        type: datetime
+        required: true
+  catalog_model:
+    label: Модель каталога
+    description: |
+      Каноническая модель из внешнего remote catalog.
+      Не используется напрямую в result, а сначала добавляется в локальный llm_model.
+    fields:
+      id:
+        type: string
+        pk: true
+      provider_catalog_id:
+        type: string
+        required: true
+        fk: catalog_provider.id
+      name:
+        type: string
+        required: true
+      version:
+        type: string
+        required: true
+      display_name:
+        type: string
+        required: true
+      aliases:
+        type: json
+        description: Массив альтернативных названий для дедупликации и поиска
+      status:
+        type: string
+        description: "`active` или `deprecated`"
+      created_at:
+        type: datetime
+        required: true
+      updated_at:
+        type: datetime
+        required: true
+  catalog_preset:
+    label: Пресет каталога
+    description: |
+      Именованный набор моделей из каталога, например `popular` или `big-three`.
+      Используется для быстрого добавления моделей в локальный список.
+    fields:
+      id:
+        type: string
+        pk: true
+      title:
+        type: string
+        required: true
+      description:
+        type: string
+      model_ids:
+        type: json
+        description: Список идентификаторов catalog_model
+      created_at:
+        type: datetime
+        required: true
+      updated_at:
+        type: datetime
+        required: true
+  model_match:
+    label: Кандидат на совпадение
+    description: |
+      Потенциальное совпадение между catalog_model и локальным llm_model.
+      Используется для review flow и предотвращения дублей.
+    fields:
+      id:
+        type: string
+        pk: true
+      catalog_model_id:
+        type: string
+        required: true
+        fk: catalog_model.id
+      local_model_id:
+        type: string
+        required: true
+        fk: llm_model.id
+      match_type:
+        type: string
+        description: "`exact`, `alias` или `normalized`"
+      confidence:
+        type: number
+      status:
+        type: string
+        description: "`pending`, `linked` или `ignored`"
+      created_at:
+        type: datetime
+        required: true
+      updated_at:
+        type: datetime
+        required: true
   result:
     label: Результат
     description: |
@@ -431,6 +579,32 @@ indexes:
     - provider_id
     - [provider_id, name, version, comment]
     - is_active
+    - source_type
+    - catalog_model_id
+    - last_used_at
+  catalog_state:
+    - id
+    - version
+    - imported_at
+  catalog_provider:
+    - id
+    - canonical_slug
+    - name
+    - is_active
+  catalog_model:
+    - id
+    - provider_catalog_id
+    - display_name
+    - status
+  catalog_preset:
+    - id
+    - title
+  model_match:
+    - id
+    - catalog_model_id
+    - local_model_id
+    - status
+    - [catalog_model_id, local_model_id]
   result:
     - id
     - prompt_version_id

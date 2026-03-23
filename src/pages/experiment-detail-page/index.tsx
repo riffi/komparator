@@ -27,11 +27,15 @@ import { cn } from "@/shared/lib/cn";
 import { buildPromptForClipboard } from "@/shared/lib/prompt";
 import { ratingToneClass } from "@/shared/lib/rating-color";
 import {
+  applyCatalogPreset,
+  createModelFromCatalog,
   createPromptVersionEntry,
   createResultEntry,
   createModelEntry,
   createProviderEntry,
+  CatalogModelBrowserItem,
   loadCategoryOptions,
+  loadCatalogBrowserItems,
   deleteResultEntry,
   loadExperimentWorkspace,
   loadModelOptions,
@@ -100,6 +104,7 @@ export function ExperimentDetailPage() {
   const [categoryOptions, setCategoryOptions] = useState<SelectOption[]>([]);
   const [wrapperOptions, setWrapperOptions] = useState<SelectOption[]>([]);
   const [modelOptions, setModelOptions] = useState<ModelSelectOption[]>([]);
+  const [catalogItems, setCatalogItems] = useState<CatalogModelBrowserItem[]>([]);
   const [providersCatalog, setProvidersCatalog] = useState<ProviderManagerItem[]>([]);
   const [settingsDraft, setSettingsDraft] = useState({
     title: "",
@@ -121,6 +126,7 @@ export function ExperimentDetailPage() {
   const [modelSearch, setModelSearch] = useState("");
   const [modelProviderFilter, setModelProviderFilter] = useState("all");
   const [modelSort, setModelSort] = useState<"recent" | "name">("recent");
+  const [modelLibraryTab, setModelLibraryTab] = useState<"popular" | "catalog" | "mine">("popular");
   const [modelDraft, setModelDraft] = useState({
     providerMode: "existing",
     providerId: "",
@@ -142,18 +148,20 @@ export function ExperimentDetailPage() {
     }
 
     setLoading(true);
-    const [nextWorkspace, nextCategories, nextWrappers, nextModels, nextProviders] = await Promise.all([
+    const [nextWorkspace, nextCategories, nextWrappers, nextModels, nextProviders, nextCatalogItems] = await Promise.all([
       loadExperimentWorkspace(experimentId),
       loadCategoryOptions(),
       loadWrapperOptions(),
       loadModelOptions(),
       loadProvidersCatalog(),
+      loadCatalogBrowserItems(),
     ]);
     setWorkspace(nextWorkspace);
     setCategoryOptions(nextCategories);
     setWrapperOptions(nextWrappers);
     setModelOptions(nextModels);
     setProvidersCatalog(nextProviders);
+    setCatalogItems(nextCatalogItems);
     setLoading(false);
   }, [experimentId]);
 
@@ -392,6 +400,27 @@ export function ExperimentDetailPage() {
     () => [...new Set(modelOptions.map((option) => option.providerName))].sort((left, right) => left.localeCompare(right)),
     [modelOptions],
   );
+
+  const catalogProviderOptions = useMemo(
+    () => [...new Set(catalogItems.map((item) => item.providerName))].sort((left, right) => left.localeCompare(right)),
+    [catalogItems],
+  );
+
+  const filteredCatalogItems = useMemo(() => {
+    const search = modelSearch.trim().toLowerCase();
+    const scoped = catalogItems.filter((item) => {
+      const matchesPreset = modelLibraryTab === "popular" ? item.presetIds.includes("popular") : true;
+      const matchesProvider = modelProviderFilter === "all" ? true : item.providerName === modelProviderFilter;
+      const matchesSearch = search
+        ? [item.providerName, item.displayName, item.name, item.version, ...item.aliases].join(" ").toLowerCase().includes(search)
+        : true;
+      return matchesPreset && matchesProvider && matchesSearch;
+    });
+
+    return scoped.sort((left, right) =>
+      left.providerName.localeCompare(right.providerName) || left.displayName.localeCompare(right.displayName),
+    );
+  }, [catalogItems, modelLibraryTab, modelProviderFilter, modelSearch]);
 
   const selectedModel = modelOptions.find((option) => option.id === resultForm.modelId);
   const selectedManagerModel =
@@ -685,9 +714,14 @@ export function ExperimentDetailPage() {
       });
     }
 
-    const [nextModels, nextProviders] = await Promise.all([loadModelOptions(), loadProvidersCatalog()]);
+    const [nextModels, nextProviders, nextCatalogItems] = await Promise.all([
+      loadModelOptions(),
+      loadProvidersCatalog(),
+      loadCatalogBrowserItems(),
+    ]);
     setModelOptions(nextModels);
     setProvidersCatalog(nextProviders);
+    setCatalogItems(nextCatalogItems);
     if (modelId) {
       setResultForm((current) => ({ ...current, modelId }));
     }
@@ -717,6 +751,39 @@ export function ExperimentDetailPage() {
     });
     await refreshWorkspace();
     setSavingPromptSettings(false);
+  };
+
+  const onUseCatalogModel = async (catalogModelId: string) => {
+    setSavingModel(true);
+    const modelId = await createModelFromCatalog(catalogModelId);
+    const [nextModels, nextProviders, nextCatalogItems] = await Promise.all([
+      loadModelOptions(),
+      loadProvidersCatalog(),
+      loadCatalogBrowserItems(),
+    ]);
+    setModelOptions(nextModels);
+    setProvidersCatalog(nextProviders);
+    setCatalogItems(nextCatalogItems);
+    setResultForm((current) => ({ ...current, modelId }));
+    setShowModelManager(false);
+    setSavingModel(false);
+  };
+
+  const onLoadPopularPreset = async () => {
+    setSavingModel(true);
+    const loaded = await applyCatalogPreset("popular");
+    const [nextModels, nextProviders, nextCatalogItems] = await Promise.all([
+      loadModelOptions(),
+      loadProvidersCatalog(),
+      loadCatalogBrowserItems(),
+    ]);
+    setModelOptions(nextModels);
+    setProvidersCatalog(nextProviders);
+    setCatalogItems(nextCatalogItems);
+    if (loaded[0]) {
+      setResultForm((current) => ({ ...current, modelId: loaded[0] }));
+    }
+    setSavingModel(false);
   };
 
   const onCreatePromptVersion = async () => {
@@ -1484,6 +1551,28 @@ export function ExperimentDetailPage() {
 
             <div className="mt-5 grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
               <div className="space-y-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  {(["popular", "catalog", "mine"] as const).map((tab) => (
+                    <button
+                      key={tab}
+                      type="button"
+                      className={cn(
+                        "rounded-full border px-3 py-1.5 text-sm transition",
+                        modelLibraryTab === tab ? "border-primary bg-primary-soft/50 text-primary" : "border-border/80 text-muted",
+                      )}
+                      onClick={() => setModelLibraryTab(tab)}
+                    >
+                      {tab === "popular" ? "Popular" : tab === "catalog" ? "Catalog" : "My models"}
+                    </button>
+                  ))}
+                  {modelLibraryTab === "popular" ? (
+                    <Button type="button" variant="ghost" onClick={() => void onLoadPopularPreset()} disabled={savingModel}>
+                      <Plus className="h-4 w-4" />
+                      Load popular
+                    </Button>
+                  ) : null}
+                </div>
+
                 <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_160px]">
                   <InputLike value={modelSearch} onChange={setModelSearch} placeholder="Search models..." />
                   <Select
@@ -1492,7 +1581,7 @@ export function ExperimentDetailPage() {
                     onChange={(event) => setModelProviderFilter(event.target.value)}
                   >
                     <option value="all">All providers</option>
-                    {providerOptions.map((provider) => (
+                    {(modelLibraryTab === "mine" ? providerOptions : catalogProviderOptions).map((provider) => (
                       <option key={provider} value={provider}>
                         {provider}
                       </option>
@@ -1509,17 +1598,83 @@ export function ExperimentDetailPage() {
                 </div>
 
                 <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
-                  {filteredModelOptions.length === 0 ? (
+                  {modelLibraryTab === "mine" ? (
+                    filteredModelOptions.length === 0 ? (
+                      <div className="rounded-lg border border-dashed border-border/80 bg-surface/30 px-4 py-8 text-center text-sm text-muted">
+                        No models match the current filters.
+                      </div>
+                    ) : (
+                      filteredModelOptions.map((option) => {
+                        const selected = resultForm.modelId === option.id;
+
+                        return (
+                          <div
+                            key={option.id}
+                            className={cn(
+                              "flex items-start gap-3 rounded-lg border px-4 py-3 transition",
+                              selected
+                                ? "border-primary bg-primary-soft/20"
+                                : "border-border/80 bg-surface/40 hover:bg-surface/70",
+                            )}
+                          >
+                            <button
+                              type="button"
+                              className="flex min-w-0 flex-1 items-start gap-3 text-left"
+                              onClick={() => {
+                                setResultForm((current) => ({ ...current, modelId: option.id }));
+                                setShowModelManager(false);
+                              }}
+                            >
+                              <div className="mt-0.5 text-primary">
+                                <Check className={cn("h-4 w-4", selected ? "opacity-100" : "opacity-0")} />
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="truncate text-sm font-semibold text-text">{option.label}</div>
+                                <div className="mt-1 text-xs text-muted">
+                                  {option.providerName}
+                                  {option.pendingMatchCount > 0 ? ` • ${option.pendingMatchCount} possible match` : ""}
+                                </div>
+                              </div>
+                            </button>
+                            <div className="flex shrink-0 items-center gap-1">
+                              <button
+                                type="button"
+                                className="inline-flex h-8 w-8 items-center justify-center text-muted transition hover:text-text"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  openDuplicateManagedModel(option);
+                                }}
+                                aria-label={`Duplicate ${option.label}`}
+                              >
+                                <Copy className="h-4 w-4" />
+                              </button>
+                              <button
+                                type="button"
+                                className="inline-flex h-8 w-8 items-center justify-center text-muted transition hover:text-text"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  openEditManagedModel(option);
+                                }}
+                                aria-label={`Edit ${option.label}`}
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )
+                  ) : filteredCatalogItems.length === 0 ? (
                     <div className="rounded-lg border border-dashed border-border/80 bg-surface/30 px-4 py-8 text-center text-sm text-muted">
-                      No models match the current filters.
+                      No catalog models match the current filters.
                     </div>
                   ) : (
-                    filteredModelOptions.map((option) => {
-                      const selected = resultForm.modelId === option.id;
+                    filteredCatalogItems.map((item) => {
+                      const selected = item.linkedLocalModelId && resultForm.modelId === item.linkedLocalModelId;
 
                       return (
                         <div
-                          key={option.id}
+                          key={item.id}
                           className={cn(
                             "flex items-start gap-3 rounded-lg border px-4 py-3 transition",
                             selected
@@ -1530,43 +1685,22 @@ export function ExperimentDetailPage() {
                           <button
                             type="button"
                             className="flex min-w-0 flex-1 items-start gap-3 text-left"
-                            onClick={() => {
-                              setResultForm((current) => ({ ...current, modelId: option.id }));
-                              setShowModelManager(false);
-                            }}
+                            onClick={() => void onUseCatalogModel(item.id)}
                           >
                             <div className="mt-0.5 text-primary">
                               <Check className={cn("h-4 w-4", selected ? "opacity-100" : "opacity-0")} />
                             </div>
                             <div className="min-w-0 flex-1">
-                              <div className="truncate text-sm font-semibold text-text">{option.label}</div>
-                              <div className="mt-1 text-xs text-muted">{option.providerName}</div>
+                              <div className="truncate text-sm font-semibold text-text">{item.displayName}</div>
+                              <div className="mt-1 text-xs text-muted">
+                                {item.providerName}
+                                {item.linkedLocalLabel ? " • already added" : item.pendingMatchId ? " • possible duplicate" : ""}
+                              </div>
                             </div>
                           </button>
-                          <div className="flex shrink-0 items-center gap-1">
-                            <button
-                              type="button"
-                              className="inline-flex h-8 w-8 items-center justify-center text-muted transition hover:text-text"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                openDuplicateManagedModel(option);
-                              }}
-                              aria-label={`Duplicate ${option.label}`}
-                            >
-                              <Copy className="h-4 w-4" />
-                            </button>
-                            <button
-                              type="button"
-                              className="inline-flex h-8 w-8 items-center justify-center text-muted transition hover:text-text"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                openEditManagedModel(option);
-                              }}
-                              aria-label={`Edit ${option.label}`}
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </button>
-                          </div>
+                          <Button type="button" variant="ghost" onClick={() => void onUseCatalogModel(item.id)} disabled={savingModel}>
+                            {item.linkedLocalModelId ? "Use" : "Add"}
+                          </Button>
                         </div>
                       );
                     })
@@ -1699,7 +1833,9 @@ export function ExperimentDetailPage() {
                     Selected: <span className="text-text">{selectedManagerModel.label}</span>
                   </span>
                 ) : (
-                  "Select a model from the catalog or create a new one."
+                  modelLibraryTab === "mine"
+                    ? "Select a model from your local list or create a new one."
+                    : "Select a catalog model to add it to your local list and use it for this result."
                 )}
               </div>
               <div className="flex items-center gap-2">
