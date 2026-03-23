@@ -22,9 +22,9 @@ export function AppShell() {
           </button>
         }
       />
-      <div className="flex w-full gap-4 px-4 pb-4 pt-[72px] lg:px-6">
+      <div className="flex min-h-[calc(100vh-72px)] w-full px-4 pb-4 pt-[72px] lg:pl-[272px] lg:pr-6">
         <AppSidebar />
-        <main className="min-w-0 flex-1">
+        <main className="min-h-0 min-w-0 flex-1">
           <Outlet />
         </main>
       </div>

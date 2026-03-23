@@ -99,23 +99,23 @@ screens:
         purpose: "Tab bar with two tabs: 'Results' (shows count badge with number of results) and 'Prompt & settings'. Results tab active by default. Right side of tab bar (visible only on Results tab): view mode toggle (Single | Side by side), prompt version dropdown (v1/v2/v3), '+ Add result' primary button."
         columns: 12
       - id: results_tab
-        purpose: "Main workspace tab. Fills remaining viewport height. Master-detail layout: narrow list on left, large preview on right."
+        purpose: "Main workspace tab. Fills the remaining viewport height as a fixed workspace. Master-detail layout: narrow list on left, large preview on right. The page itself should not grow with long result content; scrolling happens inside the results list panel and inside the preview/code panels."
         columns: 12
         blocks:
           - id: results_list
-            purpose: "Left panel: scrollable list of results for selected prompt version. Each item shows: provider color dot, model name (bold), version + comment on second line (muted), rating number (colored by rating-scale palette), attempt badge (if >1). Selected item highlighted with left border accent. Click selects result for preview. In side-by-side mode: click assigns to slot A or B (visually marked with A/B labels and distinct left-border colors). Sort control at top: by rating / by model / by date."
+            purpose: "Left panel: scrollable list of results for selected prompt version. Each item shows: provider color dot, model name (bold), version + comment on second line (muted), rating number (colored by rating-scale palette), attempt badge (if >1). Selected item highlighted with left border accent. Click selects result for preview. In side-by-side mode: click assigns to slot A or B (visually marked with A/B labels and distinct left-border colors). Sort control at top: by rating / by model / by date. If the selected prompt version has no results yet, the panel shows a compact empty state instead of an empty list. If the list exceeds the available height, the panel itself scrolls."
             columns:
               default: 3
               mobile: 12
               tablet: 4
           - id: results_preview_single
-            purpose: "Right panel: full preview of selected result. Top bar: provider dot + full model name (provider / name / version), comment badge, rating (large clickable number, opens 1-10 popover), file size, line count. Action buttons: 'Code' toggle (switches between iframe and syntax-highlighted HTML view), 'Fullscreen' (renders HTML in fullscreen overlay), 'Notes' toggle (reveals/hides editable notes textarea below), 'Delete' (with confirmation). Main area: sandboxed iframe (srcdoc) rendering the HTML result, takes all available height. Device width simulator: three buttons (mobile 375px / tablet 768px / desktop 100%) resize the iframe container width."
+            purpose: "Right panel: full preview of selected result. Top bar: provider dot + full model name (provider / name / version), comment badge, rating (large clickable number, opens 1-10 popover), file size, line count. Action buttons: 'Code' toggle (switches between iframe and syntax-highlighted HTML view), 'Fullscreen' (renders HTML in fullscreen overlay), 'Notes' toggle (reveals/hides editable notes textarea below), 'Delete' (with confirmation). Main area: sandboxed iframe (srcdoc) rendering the HTML result, takes all available height. Device width simulator: three buttons (mobile 375px / tablet 768px / desktop 100%) resize the iframe container width. If there are no results for the selected prompt version, the preview area is replaced by a dedicated empty state with 'Copy prompt' and '+ Add result' actions. If rendered HTML or code exceeds the available height, scrolling stays inside the preview area."
             columns:
               default: 9
               mobile: 12
               tablet: 8
           - id: results_preview_sbs
-            purpose: "Right panel splits into two equal-width sub-panels (A and B), separated by a draggable divider. Each sub-panel: compact header with provider dot + model name + rating, action buttons (Code, Fullscreen). Below: sandboxed iframe rendering HTML. Both panels share the same device width simulator (synced). Selecting results from the list assigns them to A (first click) then B (second click). Click again on a listed item to swap it into the most recently active slot."
+            purpose: "Right panel splits into two equal-width sub-panels (A and B), separated by a draggable divider. Each sub-panel: compact header with provider dot + model name + rating, action buttons (Code, Fullscreen). Below: sandboxed iframe rendering HTML. Both panels share the same device width simulator (synced). Selecting results from the list assigns them to A (first click) then B (second click). Click again on a listed item to swap it into the most recently active slot. Each sub-panel keeps its own internal scroll when content exceeds the available height."
             columns:
               default: 9
               mobile: 12

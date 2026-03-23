@@ -156,6 +156,7 @@ export function ExperimentDetailPage() {
   const slotB = visibleResults.find((item) => item.id === slotBId) ?? visibleResults[1] ?? visibleResults[0];
   const activePrompt =
     workspace?.promptVersions.find((item) => item.id === selectedVersionId) ?? workspace?.promptVersions[0];
+  const hasResults = visibleResults.length > 0;
   const wrappedPrompt = activePrompt
     ? workspace?.wrapperTemplate
       ? workspace.wrapperTemplate.replace("{{prompt}}", activePrompt.promptText)
@@ -327,7 +328,7 @@ export function ExperimentDetailPage() {
   };
 
   return (
-    <div className="overflow-hidden rounded-xl border border-border/80 bg-surface/70 shadow-panel">
+    <div className="flex h-[calc(100vh-88px)] min-h-0 flex-col overflow-hidden rounded-xl border border-border/80 bg-surface/70 shadow-panel lg:h-[calc(100vh-96px)]">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/80 px-5 py-4">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -422,8 +423,8 @@ export function ExperimentDetailPage() {
       </div>
 
       {activeTab === "results" ? (
-        <div className="grid min-h-[680px] grid-cols-1 xl:grid-cols-[320px_minmax(0,1fr)]">
-          <aside className="border-b border-border/80 xl:border-b-0 xl:border-r">
+        <div className="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-[320px_minmax(0,1fr)]">
+          <aside className="flex min-h-0 flex-col border-b border-border/80 xl:border-b-0 xl:border-r">
             <div className="flex items-center justify-between border-b border-border/80 px-4 py-3">
               <div>
                 <div className="font-mono text-xs uppercase tracking-[0.12em] text-dim">Results</div>
@@ -438,164 +439,196 @@ export function ExperimentDetailPage() {
                 <ListFilter className="h-4 w-4" />
               </button>
             </div>
-            <div className="max-h-[680px] space-y-1 overflow-y-auto p-2">
-              {visibleResults.map((result) => {
-                const isSelected = selectedResult?.id === result.id;
-                const isA = slotA?.id === result.id;
-                const isB = slotB?.id === result.id;
+            <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2">
+              {hasResults ? (
+                visibleResults.map((result) => {
+                  const isSelected = selectedResult?.id === result.id;
+                  const isA = slotA?.id === result.id;
+                  const isB = slotB?.id === result.id;
 
-                return (
-                  <button
-                    key={result.id}
-                    type="button"
-                    onClick={() => onSelectResult(result.id)}
-                    className={cn(
-                      "flex w-full items-start gap-3 rounded-lg border border-transparent px-3 py-3 text-left transition hover:bg-raised",
-                      viewMode === "single" && isSelected && "border-border bg-raised",
-                      viewMode === "sbs" && (isA || isB) && "border-border bg-raised",
-                    )}
-                  >
-                    <span
-                      className="mt-1 h-2.5 w-2.5 rounded-full"
-                      style={{ backgroundColor: result.providerColor }}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <div className="truncate text-sm font-semibold text-text">
-                          {result.providerName} / {result.modelName} {result.modelVersion}
-                        </div>
-                        {viewMode === "sbs" && isA ? (
-                          <span className="rounded bg-primary-soft/60 px-1.5 py-0.5 font-mono text-[10px] text-primary">
-                            A
-                          </span>
-                        ) : null}
-                        {viewMode === "sbs" && isB ? (
-                          <span className="rounded bg-orange-500/10 px-1.5 py-0.5 font-mono text-[10px] text-orange-300">
-                            B
-                          </span>
-                        ) : null}
-                      </div>
-                      <div className="mt-1 truncate text-xs text-muted">{result.modelComment}</div>
-                      <div className="mt-1 font-mono text-[11px] text-dim">
-                        Attempt {result.attempt} • {result.createdLabel}
-                      </div>
-                    </div>
-                    <div
+                  return (
+                    <button
+                      key={result.id}
+                      type="button"
+                      onClick={() => onSelectResult(result.id)}
                       className={cn(
-                        "font-mono text-sm font-semibold",
-                        result.rating ? ratingToneClass(result.rating) : "text-dim",
+                        "flex w-full items-start gap-3 rounded-lg border border-transparent px-3 py-3 text-left transition hover:bg-raised",
+                        viewMode === "single" && isSelected && "border-border bg-raised",
+                        viewMode === "sbs" && (isA || isB) && "border-border bg-raised",
                       )}
                     >
-                      {result.rating ?? "—"}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </aside>
-
-          <section className="flex min-w-0 flex-col">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/80 px-4 py-3">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <span
-                    className="h-2.5 w-2.5 rounded-full"
-                    style={{ backgroundColor: (viewMode === "single" ? selectedResult : slotA)?.providerColor }}
-                  />
-                  <div className="truncate text-sm font-semibold text-text">
-                    {viewMode === "single"
-                      ? `${selectedResult?.providerName ?? ""} / ${selectedResult?.modelName ?? ""} ${selectedResult?.modelVersion ?? ""}`
-                      : "Comparison workspace"}
-                  </div>
-                </div>
-                <div className="mt-1 text-xs text-muted">
-                  {viewMode === "single"
-                    ? `${selectedResult?.fileSizeBytes ?? 0} bytes • ${selectedResult?.lineCount ?? 0} lines`
-                    : "Click results on the left to assign slots A and B."}
-                </div>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                {viewMode === "single" && selectedResult ? (
-                  <select
-                    className="h-9 rounded-md border border-border/80 bg-code px-3 text-sm text-text outline-none focus:border-primary"
-                    value={selectedResult.rating ?? ""}
-                    onChange={(event) => void onChangeRating(event.target.value)}
-                    disabled={savingRating}
-                  >
-                    <option value="">Unrated</option>
-                    {Array.from({ length: 10 }, (_, index) => index + 1).map((value) => (
-                      <option key={value} value={value}>
-                        Rating {value}
-                      </option>
-                    ))}
-                  </select>
-                ) : null}
-                <Button
-                  variant={showCode ? "default" : "ghost"}
-                  size="sm"
-                  onClick={() => setShowCode((value) => !value)}
-                >
-                  <Code2 className="h-4 w-4" />
-                  Code
-                </Button>
-                <Button
-                  variant={showNotes ? "default" : "ghost"}
-                  size="sm"
-                  onClick={() => setShowNotes((value) => !value)}
-                >
-                  <FileText className="h-4 w-4" />
-                  Notes
-                </Button>
-                <Button variant="ghost" size="sm">
-                  <Expand className="h-4 w-4" />
-                  Fullscreen
-                </Button>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-center gap-1 border-b border-border/80 px-3 py-2">
-              <DeviceButton active={device === "mobile"} onClick={() => setDevice("mobile")} icon={Smartphone} label="375" />
-              <DeviceButton active={device === "tablet"} onClick={() => setDevice("tablet")} icon={Tablet} label="768" />
-              <DeviceButton active={device === "desktop"} onClick={() => setDevice("desktop")} icon={Monitor} label="Full" />
-            </div>
-
-            <div className="min-h-0 flex-1 overflow-auto bg-code p-4">
-              {viewMode === "single" ? (
-                showCode ? (
-                  <pre className="overflow-auto whitespace-pre-wrap rounded-lg border border-border/80 bg-[#050608] p-4 font-mono text-xs leading-6 text-muted">
-                    {selectedResult?.htmlContent ?? "No result selected."}
-                  </pre>
-                ) : (
-                  <div className="mx-auto h-[520px] max-w-full overflow-hidden rounded-lg border border-border/80 bg-white" style={{ width: deviceWidths[device] }}>
-                    {selectedResult ? (
-                      <iframe title={selectedResult.id} srcDoc={selectedResult.htmlContent} className="h-full w-full border-0" sandbox="allow-scripts" />
-                    ) : null}
-                  </div>
-                )
+                      <span
+                        className="mt-1 h-2.5 w-2.5 rounded-full"
+                        style={{ backgroundColor: result.providerColor }}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <div className="truncate text-sm font-semibold text-text">
+                            {result.providerName} / {result.modelName} {result.modelVersion}
+                          </div>
+                          {viewMode === "sbs" && isA ? (
+                            <span className="rounded bg-primary-soft/60 px-1.5 py-0.5 font-mono text-[10px] text-primary">
+                              A
+                            </span>
+                          ) : null}
+                          {viewMode === "sbs" && isB ? (
+                            <span className="rounded bg-orange-500/10 px-1.5 py-0.5 font-mono text-[10px] text-orange-300">
+                              B
+                            </span>
+                          ) : null}
+                        </div>
+                        <div className="mt-1 truncate text-xs text-muted">{result.modelComment}</div>
+                        <div className="mt-1 font-mono text-[11px] text-dim">
+                          Attempt {result.attempt} • {result.createdLabel}
+                        </div>
+                      </div>
+                      <div
+                        className={cn(
+                          "font-mono text-sm font-semibold",
+                          result.rating ? ratingToneClass(result.rating) : "text-dim",
+                        )}
+                      >
+                        {result.rating ?? "—"}
+                      </div>
+                    </button>
+                  );
+                })
               ) : (
-                <div className="grid h-[520px] gap-4 xl:grid-cols-2">
-                  <ComparePanel label="A" result={slotA} device={device} showCode={showCode} />
-                  <ComparePanel label="B" result={slotB} device={device} showCode={showCode} accent="orange" />
+                <div className="rounded-lg border border-dashed border-border/80 bg-surface/30 px-4 py-6 text-sm text-muted">
+                  No results yet for v{activePrompt?.versionNumber ?? "-"}.
                 </div>
               )}
             </div>
+          </aside>
 
-            {showNotes ? (
-              <div className="border-t border-border/80 p-4">
-                <div className="mb-2 flex items-center justify-between gap-3">
-                  <div className="font-mono text-xs uppercase tracking-[0.12em] text-dim">Notes</div>
-                  <Button size="sm" onClick={() => void onSaveNotes()} disabled={savingNotes || notesDraft === (selectedResult?.notes ?? "") || !selectedResult}>
-                    <Save className="h-4 w-4" />
-                    Save notes
-                  </Button>
+          <section className="flex min-h-0 min-w-0 flex-col">
+            {hasResults ? (
+              <>
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/80 px-4 py-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="h-2.5 w-2.5 rounded-full"
+                        style={{ backgroundColor: (viewMode === "single" ? selectedResult : slotA)?.providerColor }}
+                      />
+                      <div className="truncate text-sm font-semibold text-text">
+                        {viewMode === "single"
+                          ? `${selectedResult?.providerName ?? ""} / ${selectedResult?.modelName ?? ""} ${selectedResult?.modelVersion ?? ""}`
+                          : "Comparison workspace"}
+                      </div>
+                    </div>
+                    <div className="mt-1 text-xs text-muted">
+                      {viewMode === "single"
+                        ? `${selectedResult?.fileSizeBytes ?? 0} bytes • ${selectedResult?.lineCount ?? 0} lines`
+                        : "Click results on the left to assign slots A and B."}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {viewMode === "single" && selectedResult ? (
+                      <select
+                        className="h-9 rounded-md border border-border/80 bg-code px-3 text-sm text-text outline-none focus:border-primary"
+                        value={selectedResult.rating ?? ""}
+                        onChange={(event) => void onChangeRating(event.target.value)}
+                        disabled={savingRating}
+                      >
+                        <option value="">Unrated</option>
+                        {Array.from({ length: 10 }, (_, index) => index + 1).map((value) => (
+                          <option key={value} value={value}>
+                            Rating {value}
+                          </option>
+                        ))}
+                      </select>
+                    ) : null}
+                    <Button
+                      variant={showCode ? "default" : "ghost"}
+                      size="sm"
+                      onClick={() => setShowCode((value) => !value)}
+                    >
+                      <Code2 className="h-4 w-4" />
+                      Code
+                    </Button>
+                    <Button
+                      variant={showNotes ? "default" : "ghost"}
+                      size="sm"
+                      onClick={() => setShowNotes((value) => !value)}
+                    >
+                      <FileText className="h-4 w-4" />
+                      Notes
+                    </Button>
+                    <Button variant="ghost" size="sm">
+                      <Expand className="h-4 w-4" />
+                      Fullscreen
+                    </Button>
+                  </div>
                 </div>
-                <textarea
-                  className="min-h-[110px] w-full rounded-lg border border-border/80 bg-code px-3 py-2 text-sm text-text outline-none focus:border-primary"
-                  value={notesDraft}
-                  onChange={(event) => setNotesDraft(event.target.value)}
-                />
+
+                <div className="flex items-center justify-center gap-1 border-b border-border/80 px-3 py-2">
+                  <DeviceButton active={device === "mobile"} onClick={() => setDevice("mobile")} icon={Smartphone} label="375" />
+                  <DeviceButton active={device === "tablet"} onClick={() => setDevice("tablet")} icon={Tablet} label="768" />
+                  <DeviceButton active={device === "desktop"} onClick={() => setDevice("desktop")} icon={Monitor} label="Full" />
+                </div>
+
+                <div className="min-h-0 flex-1 overflow-auto bg-code p-4">
+                  {viewMode === "single" ? (
+                    showCode ? (
+                      <pre className="overflow-auto whitespace-pre-wrap rounded-lg border border-border/80 bg-[#050608] p-4 font-mono text-xs leading-6 text-muted">
+                        {selectedResult?.htmlContent ?? "No result selected."}
+                      </pre>
+                    ) : (
+                      <div className="mx-auto h-full min-h-[520px] max-w-full overflow-hidden rounded-lg border border-border/80 bg-white" style={{ width: deviceWidths[device] }}>
+                        {selectedResult ? (
+                          <iframe title={selectedResult.id} srcDoc={selectedResult.htmlContent} className="h-full w-full border-0" sandbox="allow-scripts" />
+                        ) : null}
+                      </div>
+                    )
+                  ) : (
+                    <div className="grid h-full min-h-[520px] gap-4 xl:grid-cols-2">
+                      <ComparePanel label="A" result={slotA} device={device} showCode={showCode} />
+                      <ComparePanel label="B" result={slotB} device={device} showCode={showCode} accent="orange" />
+                    </div>
+                  )}
+                </div>
+
+                {showNotes ? (
+                  <div className="border-t border-border/80 p-4">
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <div className="font-mono text-xs uppercase tracking-[0.12em] text-dim">Notes</div>
+                      <Button size="sm" onClick={() => void onSaveNotes()} disabled={savingNotes || notesDraft === (selectedResult?.notes ?? "") || !selectedResult}>
+                        <Save className="h-4 w-4" />
+                        Save notes
+                      </Button>
+                    </div>
+                    <textarea
+                      className="min-h-[110px] w-full rounded-lg border border-border/80 bg-code px-3 py-2 text-sm text-text outline-none focus:border-primary"
+                      value={notesDraft}
+                      onChange={(event) => setNotesDraft(event.target.value)}
+                    />
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-code p-6">
+                <div className="w-full max-w-xl rounded-xl border border-dashed border-border/80 bg-surface/60 p-8 text-center shadow-panel">
+                  <div className="font-mono text-xs uppercase tracking-[0.14em] text-dim">Empty results</div>
+                  <h2 className="mt-3 font-mono text-2xl font-semibold text-text">
+                    No results for v{activePrompt?.versionNumber ?? "-"} yet
+                  </h2>
+                  <p className="mt-3 text-sm leading-6 text-muted">
+                    Copy the prompt for the current version, run it in an external LLM chat, then add the generated HTML result here.
+                  </p>
+                  <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+                    <Button variant="ghost" onClick={() => void copyPrompt()}>
+                      <Copy className="h-4 w-4" />
+                      {copyingPrompt ? "Copied" : "Copy prompt"}
+                    </Button>
+                    <Button onClick={() => setShowAddResult(true)}>
+                      <Plus className="h-4 w-4" />
+                      Add result
+                    </Button>
+                  </div>
+                </div>
               </div>
-            ) : null}
+            )}
           </section>
         </div>
       ) : (
@@ -905,7 +938,7 @@ function DeviceButton({ active, onClick, icon: Icon, label }: { active: boolean;
 
 function ComparePanel({ label, result, device, showCode, accent = "blue" }: { label: "A" | "B"; result?: WorkspaceResultItem; device: keyof typeof deviceWidths; showCode: boolean; accent?: "blue" | "orange" }) {
   if (!result) {
-    return <div className="flex items-center justify-center rounded-lg border border-dashed border-border/80 bg-[#050608] font-mono text-sm text-dim">Select a result</div>;
+    return <div className="flex min-h-0 items-center justify-center rounded-lg border border-dashed border-border/80 bg-[#050608] font-mono text-sm text-dim">Select a result</div>;
   }
 
   return (

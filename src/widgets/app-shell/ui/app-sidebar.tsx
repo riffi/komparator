@@ -18,7 +18,7 @@ export function AppSidebar() {
   return (
     <aside
       className={cn(
-        "fixed inset-y-0 left-0 z-40 w-[280px] border-r border-border/80 bg-raised/95 px-3 pb-4 pt-20 shadow-panel transition lg:sticky lg:top-[72px] lg:h-[calc(100vh-88px)] lg:w-[248px] lg:translate-x-0 lg:rounded-xl lg:border lg:pt-4",
+        "fixed bottom-0 left-0 top-14 z-30 w-[280px] border-r border-border/80 bg-raised/95 px-3 pb-4 pt-6 transition lg:w-[248px] lg:translate-x-0",
         mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0",
       )}
     >
