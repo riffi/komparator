@@ -13,6 +13,7 @@ import {
   updateProviderEntry,
 } from "@/shared/db/workspace";
 import { Button } from "@/shared/ui/button";
+import { Select } from "@/shared/ui/select";
 
 export function ModelsPage() {
   const [loading, setLoading] = useState(true);
@@ -441,9 +442,9 @@ function SelectField({ label, value, onChange, options }: { label: string; value
   return (
     <div className="space-y-2">
       <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">{label}</div>
-      <select className="h-10 w-full rounded-md border border-border/80 bg-code px-3 text-sm text-text outline-none focus:border-primary" value={value} onChange={(event) => onChange(event.target.value)}>
+      <Select wrapperClassName="w-full" value={value} onChange={(event) => onChange(event.target.value)}>
         {options.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
-      </select>
+      </Select>
     </div>
   );
 }

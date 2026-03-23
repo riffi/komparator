@@ -2,6 +2,7 @@ import { FolderTree, Plus, Search } from "lucide-react";
 import { filterStore } from "@/features/experiment-filters/model/use-experiment-filters";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
+import { Select } from "@/shared/ui/select";
 import { cn } from "@/shared/lib/cn";
 
 export function ExperimentsHeader({
@@ -62,8 +63,8 @@ export function ExperimentsHeader({
         />
       </div>
 
-      <select
-        className="h-10 rounded-md border border-border/80 bg-code px-3 text-sm text-text outline-none transition focus:border-primary"
+      <Select
+        wrapperClassName="min-w-[170px]"
         value={sort}
         onChange={(event) => setSort(event.target.value as typeof sort)}
       >
@@ -71,7 +72,7 @@ export function ExperimentsHeader({
         <option value="newest">Newest</option>
         <option value="oldest">Oldest</option>
         <option value="title">A-Z</option>
-      </select>
+      </Select>
 
       <Button variant="ghost" onClick={onManageCategories}>
         <FolderTree className="h-4 w-4" />

@@ -18,6 +18,7 @@ import {
 } from "@/shared/db/workspace";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
+import { Select } from "@/shared/ui/select";
 
 type ExperimentCreateForm = {
   title: string;
@@ -226,8 +227,8 @@ export function ExperimentsPage() {
                 <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
                   Category
                 </span>
-                <select
-                  className="h-10 w-full rounded-md border border-border/80 bg-code px-3 text-sm text-text outline-none transition focus:border-primary"
+                <Select
+                  wrapperClassName="w-full"
                   value={form.categoryId}
                   onChange={(event) =>
                     setForm((current) => ({ ...current, categoryId: event.target.value }))
@@ -239,15 +240,15 @@ export function ExperimentsPage() {
                       {option.label}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
 
               <label className="space-y-2">
                 <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
                   Wrapper
                 </span>
-                <select
-                  className="h-10 w-full rounded-md border border-border/80 bg-code px-3 text-sm text-text outline-none transition focus:border-primary"
+                <Select
+                  wrapperClassName="w-full"
                   value={form.wrapperId}
                   onChange={(event) =>
                     setForm((current) => ({ ...current, wrapperId: event.target.value }))
@@ -259,7 +260,7 @@ export function ExperimentsPage() {
                       {option.label}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
 
               <label className="space-y-2 md:col-span-2">

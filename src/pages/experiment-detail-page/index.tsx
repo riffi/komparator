@@ -47,6 +47,7 @@ import {
   updateResultRating,
 } from "@/shared/db/workspace";
 import { Button } from "@/shared/ui/button";
+import { Select } from "@/shared/ui/select";
 
 const deviceWidths = {
   mobile: "375px",
@@ -707,8 +708,9 @@ export function ExperimentDetailPage() {
                 Side by side
               </button>
             </div>
-            <select
-              className="h-9 rounded-md border border-border/80 bg-code px-3 text-sm text-text outline-none focus:border-primary"
+            <Select
+              className="h-9"
+              wrapperClassName="min-w-[96px]"
               value={selectedVersionId}
               onChange={(event) => setSelectedVersionId(event.target.value)}
             >
@@ -717,7 +719,7 @@ export function ExperimentDetailPage() {
                   v{version.versionNumber}
                 </option>
               ))}
-            </select>
+            </Select>
             <Button size="sm" onClick={() => setShowAddResult(true)}>
               <Plus className="h-4 w-4" />
               Add result
@@ -738,15 +740,16 @@ export function ExperimentDetailPage() {
               </div>
               <div className="flex items-center gap-2">
                 <ListFilter className="h-4 w-4 text-dim" />
-                <select
-                  className="h-9 rounded-md border border-border/80 bg-code px-3 text-sm text-text outline-none focus:border-primary"
+                <Select
+                  className="h-9"
+                  wrapperClassName="min-w-[132px]"
                   value={resultsSort}
                   onChange={(event) => setResultsSort(event.target.value as typeof resultsSort)}
                 >
                   <option value="rating">By rating</option>
                   <option value="date">By date</option>
                   <option value="model">By model</option>
-                </select>
+                </Select>
               </div>
             </div>
             <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2">
@@ -867,8 +870,9 @@ export function ExperimentDetailPage() {
                             {selectedResult?.providerName ?? ""} / {selectedResult?.modelName ?? ""}{" "}
                             {selectedResult?.modelVersion ?? ""}
                           </div>
-                          <select
-                            className="h-7 rounded-full border border-border/80 bg-code px-2.5 font-mono text-[11px] text-text outline-none focus:border-primary"
+                          <Select
+                            className="h-7 rounded-full border-border/80 px-2.5 py-0 font-mono text-[11px]"
+                            wrapperClassName="w-[102px]"
                             value={selectedResult?.rating ?? ""}
                             onChange={(event) => void onChangeRating(event.target.value)}
                             disabled={savingRating || !selectedResult}
@@ -879,7 +883,7 @@ export function ExperimentDetailPage() {
                                 {value}
                               </option>
                             ))}
-                          </select>
+                          </Select>
                         </div>
                         <div className="mt-1 text-xs text-muted">
                           {selectedResult?.modelComment || "No comment"} • {selectedResult?.fileSizeBytes ?? 0} bytes •{" "}
@@ -1372,8 +1376,8 @@ export function ExperimentDetailPage() {
               <div className="space-y-4">
                 <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
                   <InputLike value={modelSearch} onChange={setModelSearch} placeholder="Search models..." />
-                  <select
-                    className="h-10 rounded-md border border-border/80 bg-code px-3 text-sm text-text outline-none transition focus:border-primary"
+                  <Select
+                    wrapperClassName="w-full"
                     value={modelProviderFilter}
                     onChange={(event) => setModelProviderFilter(event.target.value)}
                   >
@@ -1383,7 +1387,7 @@ export function ExperimentDetailPage() {
                         {provider}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </div>
 
                 <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
@@ -1489,8 +1493,8 @@ export function ExperimentDetailPage() {
                 {modelDraft.providerMode === "existing" ? (
                   <label className="space-y-2">
                     <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Provider</span>
-                    <select
-                      className="h-10 w-full rounded-md border border-border/80 bg-code px-3 text-sm text-text outline-none transition focus:border-primary"
+                    <Select
+                      wrapperClassName="w-full"
                       value={modelDraft.providerId}
                       onChange={(event) => setModelDraft((current) => ({ ...current, providerId: event.target.value }))}
                     >
@@ -1499,7 +1503,7 @@ export function ExperimentDetailPage() {
                           {provider.name}
                         </option>
                       ))}
-                    </select>
+                    </Select>
                   </label>
                 ) : (
                   <>
@@ -1927,8 +1931,8 @@ function SelectField({
   return (
     <div>
       <div className="mb-1 font-mono text-[11px] uppercase tracking-[0.12em] text-dim">{label}</div>
-      <select
-        className="h-10 w-full rounded-lg border border-border/80 bg-code px-3 text-sm text-text outline-none focus:border-primary"
+      <Select
+        wrapperClassName="w-full"
         value={value}
         onChange={(event) => onChange(event.target.value)}
       >
@@ -1938,7 +1942,7 @@ function SelectField({
             {option.label}
           </option>
         ))}
-      </select>
+      </Select>
     </div>
   );
 }
