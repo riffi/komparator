@@ -1916,15 +1916,15 @@ export function ExperimentDetailPage() {
       {showFullscreen && hasResults ? (
         <div className="fixed inset-0 z-[60] bg-black/80 p-4">
           <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-border/80 bg-raised shadow-panel">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/80 px-4 py-3">
-              <div className="min-w-0">
-                {viewMode === "single" ? (
-                  <>
-                    <div className="flex items-center gap-2">
+            <div className="border-b border-border/80 px-4 py-3">
+              {viewMode === "single" ? (
+                <>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex min-w-0 flex-wrap items-center gap-3">
                       {visibleResults.length > 1 ? (
                         <button
                           type="button"
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border/80 bg-code text-muted transition hover:text-text"
+                          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border/80 bg-code text-muted transition hover:text-text"
                           onClick={() => onSelectAdjacentResult("prev")}
                           aria-label="Previous result"
                         >
@@ -1935,56 +1935,67 @@ export function ExperimentDetailPage() {
                         {selectedResult?.providerName ?? ""} / {selectedResult?.modelName ?? ""}{" "}
                         {selectedResult?.modelVersion ?? ""}
                       </div>
-                      <span className="rounded-full bg-white/5 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-muted">
+                      <span className="shrink-0 rounded-full bg-white/5 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-muted">
                         Attempt {selectedResult?.attempt ?? "-"}
                       </span>
                       {visibleResults.length > 1 ? (
                         <button
                           type="button"
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border/80 bg-code text-muted transition hover:text-text"
+                          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border/80 bg-code text-muted transition hover:text-text"
                           onClick={() => onSelectAdjacentResult("next")}
                           aria-label="Next result"
                         >
                           <ChevronRight className="h-4 w-4" />
                         </button>
                       ) : null}
-                    </div>
-                    <div className="mt-1 text-xs text-muted">
-                      {selectedResult?.modelComment || "No comment"} • {selectedResult?.fileSizeBytes ?? 0} bytes •{" "}
-                      {selectedResult?.lineCount ?? 0} lines
-                    </div>
-                    <div className="mt-3">
                       <RatingStars
                         value={selectedResult?.rating ?? null}
                         disabled={savingRating || !selectedResult}
                         onChange={(value) => void onChangeRating(value ? String(value) : "")}
                       />
                     </div>
-                  </>
-                ) : (
-                  <>
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      <div className="flex rounded-md border border-border/80 bg-code p-1">
+                        <DeviceButton active={device === "mobile"} onClick={() => setDevice("mobile")} icon={Smartphone} label="Mobile" />
+                        <DeviceButton active={device === "tablet"} onClick={() => setDevice("tablet")} icon={Tablet} label="Tablet" />
+                        <DeviceButton active={device === "desktop"} onClick={() => setDevice("desktop")} icon={Monitor} label="Desktop" />
+                      </div>
+                      <button
+                        type="button"
+                        className="inline-flex h-9 w-9 items-center justify-center text-muted transition hover:text-text"
+                        onClick={() => setShowFullscreen(false)}
+                        aria-label="Close fullscreen"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="min-w-0">
                     <div className="truncate text-sm font-semibold text-text">Comparison workspace</div>
                     <div className="mt-1 text-xs text-muted">
                       Fullscreen preview of the current comparison view.
                     </div>
-                  </>
-                )}
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="flex rounded-md border border-border/80 bg-code p-1">
-                  <DeviceButton active={device === "mobile"} onClick={() => setDevice("mobile")} icon={Smartphone} label="Mobile" />
-                  <DeviceButton active={device === "tablet"} onClick={() => setDevice("tablet")} icon={Tablet} label="Tablet" />
-                  <DeviceButton active={device === "desktop"} onClick={() => setDevice("desktop")} icon={Monitor} label="Desktop" />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex rounded-md border border-border/80 bg-code p-1">
+                      <DeviceButton active={device === "mobile"} onClick={() => setDevice("mobile")} icon={Smartphone} label="Mobile" />
+                      <DeviceButton active={device === "tablet"} onClick={() => setDevice("tablet")} icon={Tablet} label="Tablet" />
+                      <DeviceButton active={device === "desktop"} onClick={() => setDevice("desktop")} icon={Monitor} label="Desktop" />
+                    </div>
+                    <button
+                      type="button"
+                      className="inline-flex h-9 w-9 items-center justify-center text-muted transition hover:text-text"
+                      onClick={() => setShowFullscreen(false)}
+                      aria-label="Close fullscreen"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  className="inline-flex h-9 w-9 items-center justify-center text-muted transition hover:text-text"
-                  onClick={() => setShowFullscreen(false)}
-                  aria-label="Close fullscreen"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
+              )}
             </div>
             <div className="min-h-0 flex-1 overflow-auto bg-code p-4">
               {viewMode === "single" ? (
