@@ -63,7 +63,6 @@ screen_groups:
     screens:
       - experiments_list
       - experiment_detail
-      - experiment_form
   - id: reference_data
     screens:
       - models_list
@@ -77,7 +76,7 @@ screens:
   experiments_list:
     blocks:
       - id: list_header
-        purpose: "Compact toolbar row: page title 'Experiments' with count, view mode segmented control (All | By category), title-only search input, sort dropdown, 'Categories' button for inline category management, and 'New experiment' primary button."
+        purpose: "Compact toolbar row: page title 'Experiments' with count, view mode segmented control (All | By category), title-only search input, sort dropdown, 'Categories' button for inline category management, and 'New experiment' primary button. The new-experiment action opens a lightweight create-only modal; there is no separate edit-experiment screen because experiment and prompt changes are handled inside 'Prompt & settings' on experiment_detail."
         columns: 12
       - id: categories_manager
         purpose: "Modal opened from the toolbar on the experiments page. Lists categories with color, description and experiment count. Supports create, rename, recolor and delete. Delete is disabled when the category is still used by experiments."
@@ -102,7 +101,7 @@ screens:
         purpose: "Modal flow for attaching a result to the current prompt version. The content is organized as three explicit steps on one screen. Step 1: compact prompt block with version, wrapper, copy action and final clipboard prompt preview. The copied prompt always includes a built-in instruction to return exactly one HTML page and no explanation outside it; external assets and CDNs are allowed. Wrapper is optional and, when present, wraps that final prompt. Step 2: chosen model summary with a 'Choose model' action opening a dedicated chooser modal. Step 3: large HTML output textarea. Optional notes stay collapsed by default below the HTML field. Rating is not collected at this stage; it is set later while reviewing the rendered result."
         columns: 12
       - id: add_result_model_manager
-        purpose: "Nested modal opened from Add result. Left side: model catalog list with search by model/provider text and provider filter dropdown. User can choose an existing model from the list. Right side: add-new-model form for creating a new model inline (provider, model name, version, comment). Newly created model becomes immediately selectable for the pending result."
+        purpose: "Nested modal opened from Add result. Left side: model catalog list with search by model/provider text and provider filter dropdown. User can choose an existing model from the list. Each model row also exposes quick actions for edit and duplicate without leaving the modal. Right side: shared model editor used for create, edit and duplicate flows (existing or new provider, model name, version, comment, active state). Newly created or updated model becomes immediately selectable for the pending result."
         columns: 12
       - id: results_tab
         purpose: "Main workspace tab. Fills the remaining viewport height as a fixed workspace. Master-detail layout: narrow list on left, large preview on right. The page itself should not grow with long result content; scrolling happens inside the results list panel and inside the preview/code panels."
@@ -134,33 +133,23 @@ screens:
             purpose: "Prompt version selector: horizontal pills (v1, v2, v3...) with '+ New version' button at end. Active version highlighted."
             columns: 12
           - id: prompt_editor
-            purpose: "Selected version: prompt text in editable monospace textarea (surface-code background, line numbers). Below: change_note (italic, muted text — what changed from previous version). 'Save changes' button appears when text modified."
+            purpose: "Selected version: prompt text in editable monospace editor with a line-number gutter (surface-code background). Below: change_note (italic, muted text — what changed from previous version). Save changes button is enabled only when something changed."
             columns: 12
           - id: experiment_settings
-            purpose: "Collapsible settings section: description (editable textarea), wrapper selector (dropdown with 'No wrapper' option, shows the final clipboard prompt with the built-in HTML instruction when wrapper is not selected and the wrapped final prompt preview otherwise), category selector (dropdown with optional empty state / 'No category'). Created/updated dates (read-only)."
+            purpose: "Collapsible settings section: title, description (editable textarea), wrapper selector (dropdown with 'No wrapper' option, shows the final clipboard prompt with the built-in HTML instruction when wrapper is not selected and the wrapped final prompt preview otherwise), category selector (dropdown with optional empty state / 'No category'). Experiment created/updated dates plus prompt version created date are shown as read-only fields."
             columns: 12
     title: Experiment Detail
     purpose: "Central workspace for one experiment. Two tabs: Results (default, primary workspace) and Prompt & settings (rare editing). Results tab has list+preview layout with single/side-by-side modes."
-  experiment_form:
-    blocks:
-      - id: form_content
-        purpose: "Form fields: title (text input, required), description (textarea), category (optional select from categories managed on the experiments page), wrapper (optional select from wrappers with explicit 'No wrapper' option; shows raw prompt when not selected and wrapper preview when selected). Form remains usable even if categories or wrappers catalogs are empty."
-        columns: 12
-      - id: form_footer
-        purpose: Cancel (closes modal) and Save (validates, saves, navigates to experiment_detail) buttons.
-        columns: 12
-    title: New / Edit Experiment
-    purpose: Modal dialog for creating or editing experiment metadata.
   models_list:
     blocks:
       - id: models_header
         purpose: Page title 'Models', search input, 'Add provider' button, 'Add model' primary button.
         columns: 12
       - id: providers_section
-        purpose: "Providers displayed as a horizontal row of editable chips/cards. Each: provider color dot, name, model count badge. Click to filter models below. 'Edit' on hover opens inline editing (name, color, icon). Draggable to reorder."
+        purpose: "Providers displayed as a horizontal row of editable chips/cards. Each: provider color dot, name, model count badge. Click to filter models below. Separate provider cards below allow quick editing of name, color and active state."
         columns: 12
       - id: models_table
-        purpose: "Table of models. Columns: provider (icon + name), model name, version, comment/config, is_active toggle, results count (how many times used), avg rating across all results. Row actions: edit (opens model_form), duplicate (pre-fills form), deactivate toggle. Sortable by any column. Filterable by provider (via chips above)."
+        purpose: "Table of models. Columns: provider (color dot + name), model name, version, comment/config, is_active toggle, results count (how many times used), avg rating across all results. Row actions: edit (opens model_form), duplicate (pre-fills form), deactivate toggle. Sortable by the visible columns and filterable by provider (via chips above)."
         columns: 12
     title: Models
     purpose: Manage LLM providers and models catalog.
@@ -180,7 +169,7 @@ screens:
         purpose: Page title 'Wrappers', 'Add wrapper' primary button.
         columns: 12
       - id: wrappers_grid
-        purpose: "Grid of wrapper cards. Each: name (bold), 'default' badge if is_default, template text preview (first 3 lines, monospace, surface-code background), usage count (how many experiments use it), updated date. Click → wrapper_form. Actions: duplicate, set as default, delete (with check if used by experiments)."
+        purpose: "Grid of wrapper cards. Each: name (bold), 'default' badge if is_default, template text preview (first 3 lines, monospace, surface-code background), usage count (how many experiments use it), updated date. Click → wrapper_form. Actions: duplicate, set as default, delete (with check if used by experiments). If there are no wrappers yet, the grid area switches to a styled onboarding empty state that explains what wrappers are, how {{prompt}} works, and how wrappers are attached to experiments before comparison."
         columns: 12
     title: Wrappers
     purpose: Manage prompt wrapper templates.
@@ -207,7 +196,7 @@ screens:
         purpose: "Top row of metric cards: total experiments, total results, total models used, average rating across all results. Each card shows number + trend indicator."
         columns: 12
       - id: model_leaderboard
-        purpose: "Leaderboard table: models ranked by average rating. Columns: rank, provider icon + model name + version, avg rating (colored), number of results rated, win rate (% of times this model had highest rating in an experiment). Sortable."
+        purpose: "Leaderboard table: models ranked by average rating. Columns: rank, provider color dot + model name + version, avg rating (colored), number of results rated, win rate (% of times this model had highest rating in an experiment). Sortable."
         columns:
           default: 6
           mobile: 12

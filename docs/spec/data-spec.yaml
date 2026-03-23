@@ -197,10 +197,6 @@ entities:
         type: string
         label: Цвет
         description: HEX-цвет бренда провайдера для UI
-      icon:
-        type: string
-        label: Иконка
-        description: URL или data-URI иконки/логотипа провайдера
       is_active:
         type: boolean
         default: true

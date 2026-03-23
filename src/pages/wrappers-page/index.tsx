@@ -173,8 +173,49 @@ export function WrappersPage() {
             </article>
           ))
         ) : (
-          <div className="rounded-xl border border-dashed border-border/80 bg-surface/70 px-5 py-10 text-center text-sm text-muted shadow-panel">
-            No wrappers yet. Create the first one to standardize prompt copying.
+          <div className="rounded-[28px] border border-dashed border-border/80 bg-[radial-gradient(circle_at_top,rgba(91,141,239,0.18),transparent_55%),rgba(15,18,24,0.94)] px-8 py-12 shadow-panel lg:col-span-2 lg:px-12 lg:py-14 xl:col-span-3">
+            <div className="mx-auto max-w-4xl text-center">
+              <div className="font-mono text-xs uppercase tracking-[0.22em] text-primary">Prompt wrappers</div>
+              <h2 className="mt-4 text-3xl font-semibold tracking-[-0.05em] text-text lg:text-[2.25rem]">
+                Standardize how prompts are sent to different models
+              </h2>
+              <p className="mx-auto mt-4 max-w-3xl text-base leading-7 text-muted">
+                Wrappers are optional prompt templates. They sit around the final clipboard prompt and help you
+                enforce a consistent output style, add shared instructions, or keep recurring HTML-generation rules
+                in one reusable place.
+              </p>
+
+              <div className="mt-8 grid gap-4 text-left md:grid-cols-3 lg:gap-5">
+                <div className="rounded-2xl border border-border/80 bg-surface/40 p-5 lg:p-6">
+                  <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">1. Create</div>
+                  <p className="mt-3 text-sm leading-6 text-muted">
+                    Write a wrapper template with <code>{"{{prompt}}"}</code> where the experiment prompt should be inserted.
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-border/80 bg-surface/40 p-5 lg:p-6">
+                  <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">2. Attach</div>
+                  <p className="mt-3 text-sm leading-6 text-muted">
+                    Pick that wrapper in an experiment when you want copied prompts to include the extra instructions.
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-border/80 bg-surface/40 p-5 lg:p-6">
+                  <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">3. Compare</div>
+                  <p className="mt-3 text-sm leading-6 text-muted">
+                    Run the same wrapped prompt through multiple LLMs and compare the HTML outputs side by side.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-8 flex flex-col items-center justify-center gap-3">
+                <Button onClick={openCreate}>
+                  <Plus className="h-4 w-4" />
+                  Create first wrapper
+                </Button>
+                <div className="text-sm text-dim">
+                  Leave wrappers empty if you want experiments to copy only the base prompt.
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </div>

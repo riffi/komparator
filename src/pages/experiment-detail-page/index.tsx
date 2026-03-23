@@ -1,5 +1,6 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Check,
@@ -28,14 +29,18 @@ import {
   createPromptVersionEntry,
   createResultEntry,
   createModelEntry,
+  createProviderEntry,
   loadCategoryOptions,
   deleteResultEntry,
   loadExperimentWorkspace,
   loadModelOptions,
+  loadProvidersCatalog,
   loadWrapperOptions,
   ModelSelectOption,
+  ProviderManagerItem,
   SelectOption,
   updateExperimentEntry,
+  updateModelEntry,
   updatePromptVersionEntry,
   updateResultEntry,
   updateResultNotes,
@@ -84,9 +89,11 @@ export function ExperimentDetailPage() {
   const [copyingPrompt, setCopyingPrompt] = useState(false);
   const [savingPromptSettings, setSavingPromptSettings] = useState(false);
   const [creatingVersion, setCreatingVersion] = useState(false);
+  const [showExperimentSettings, setShowExperimentSettings] = useState(true);
   const [categoryOptions, setCategoryOptions] = useState<SelectOption[]>([]);
   const [wrapperOptions, setWrapperOptions] = useState<SelectOption[]>([]);
   const [modelOptions, setModelOptions] = useState<ModelSelectOption[]>([]);
+  const [providersCatalog, setProvidersCatalog] = useState<ProviderManagerItem[]>([]);
   const [settingsDraft, setSettingsDraft] = useState({
     title: "",
     description: "",
@@ -107,11 +114,17 @@ export function ExperimentDetailPage() {
   const [modelSearch, setModelSearch] = useState("");
   const [modelProviderFilter, setModelProviderFilter] = useState("all");
   const [modelDraft, setModelDraft] = useState({
+    providerMode: "existing",
+    providerId: "",
+    providerColor: "#5b8def",
     providerName: "",
     modelName: "",
     modelVersion: "",
     modelComment: "",
+    isActive: true,
   });
+  const [editingModelId, setEditingModelId] = useState<string | null>(null);
+  const [duplicatingModelId, setDuplicatingModelId] = useState<string | null>(null);
 
   const refreshWorkspace = useCallback(async () => {
     if (!experimentId) {
@@ -121,16 +134,18 @@ export function ExperimentDetailPage() {
     }
 
     setLoading(true);
-    const [nextWorkspace, nextCategories, nextWrappers, nextModels] = await Promise.all([
+    const [nextWorkspace, nextCategories, nextWrappers, nextModels, nextProviders] = await Promise.all([
       loadExperimentWorkspace(experimentId),
       loadCategoryOptions(),
       loadWrapperOptions(),
       loadModelOptions(),
+      loadProvidersCatalog(),
     ]);
     setWorkspace(nextWorkspace);
     setCategoryOptions(nextCategories);
     setWrapperOptions(nextWrappers);
     setModelOptions(nextModels);
+    setProvidersCatalog(nextProviders);
     setLoading(false);
   }, [experimentId]);
 
@@ -250,6 +265,20 @@ export function ExperimentDetailPage() {
   }, [modelOptions]);
 
   useEffect(() => {
+    if (!providersCatalog.length) {
+      return;
+    }
+
+    setModelDraft((current) => ({
+      ...current,
+      providerId:
+        current.providerId && providersCatalog.some((provider) => provider.id === current.providerId)
+          ? current.providerId
+          : providersCatalog[0].id,
+    }));
+  }, [providersCatalog]);
+
+  useEffect(() => {
     if (!workspace) {
       return;
     }
@@ -293,6 +322,16 @@ export function ExperimentDetailPage() {
   const selectedManagerModel =
     filteredModelOptions.find((option) => option.id === resultForm.modelId) ?? selectedModel;
   const selectedResultIndex = selectedResult ? visibleResults.findIndex((item) => item.id === selectedResult.id) : -1;
+  const promptLineCount = Math.max(1, settingsDraft.promptText.split(/\r\n|\r|\n/).length);
+  const promptLineNumbers = Array.from({ length: promptLineCount }, (_, index) => index + 1);
+  const promptSettingsDirty = workspace && activePrompt
+    ? settingsDraft.title !== workspace.title ||
+      settingsDraft.description !== workspace.description ||
+      settingsDraft.categoryId !== (workspace.categoryId ?? "") ||
+      settingsDraft.wrapperId !== (workspace.wrapperId ?? "") ||
+      settingsDraft.promptText !== activePrompt.promptText ||
+      settingsDraft.changeNote !== (activePrompt.changeNote ?? "")
+    : false;
 
   if (loading) {
     return (
@@ -462,23 +501,102 @@ export function ExperimentDetailPage() {
     setShowNotes(false);
   };
 
-  const onCreateModel = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!modelDraft.providerName.trim() || !modelDraft.modelName.trim() || !modelDraft.modelVersion.trim()) {
-      return;
-    }
-
-    setSavingModel(true);
-    const modelId = await createModelEntry(modelDraft);
-    const nextModels = await loadModelOptions();
-    setModelOptions(nextModels);
-    setResultForm((current) => ({ ...current, modelId }));
+  const resetManagedModelDraft = (nextProviders: ProviderManagerItem[] = providersCatalog) => {
     setModelDraft({
+      providerMode: nextProviders.length ? "existing" : "new",
+      providerId: nextProviders[0]?.id ?? "",
+      providerColor: "#5b8def",
       providerName: "",
       modelName: "",
       modelVersion: "",
       modelComment: "",
+      isActive: true,
     });
+    setEditingModelId(null);
+    setDuplicatingModelId(null);
+  };
+
+  const openEditManagedModel = (option: ModelSelectOption) => {
+    setEditingModelId(option.id);
+    setDuplicatingModelId(null);
+    setModelDraft({
+      providerMode: "existing",
+      providerId: option.providerId,
+      providerColor: option.providerColor,
+      providerName: option.providerName,
+      modelName: option.modelName,
+      modelVersion: option.modelVersion,
+      modelComment: option.modelComment,
+      isActive: option.isActive,
+    });
+  };
+
+  const openDuplicateManagedModel = (option: ModelSelectOption) => {
+    setEditingModelId(null);
+    setDuplicatingModelId(option.id);
+    setModelDraft({
+      providerMode: "existing",
+      providerId: option.providerId,
+      providerColor: option.providerColor,
+      providerName: option.providerName,
+      modelName: option.modelName,
+      modelVersion: `${option.modelVersion} copy`,
+      modelComment: option.modelComment,
+      isActive: option.isActive,
+    });
+  };
+
+  const onCreateModel = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const providerName =
+      modelDraft.providerMode === "new"
+        ? modelDraft.providerName.trim()
+        : providersCatalog.find((provider) => provider.id === modelDraft.providerId)?.name?.trim() ?? "";
+
+    if (!providerName || !modelDraft.modelName.trim() || !modelDraft.modelVersion.trim()) {
+      return;
+    }
+
+    setSavingModel(true);
+    let providerId = modelDraft.providerId;
+
+    if (modelDraft.providerMode === "new") {
+      providerId = await createProviderEntry({
+        name: providerName,
+        color: modelDraft.providerColor,
+      });
+    }
+
+    let modelId: string | null = null;
+
+    if (editingModelId) {
+      await updateModelEntry({
+        modelId: editingModelId,
+        providerId,
+        name: modelDraft.modelName,
+        version: modelDraft.modelVersion,
+        comment: modelDraft.modelComment,
+        isActive: modelDraft.isActive,
+      });
+      modelId = editingModelId;
+    } else {
+      modelId = await createModelEntry({
+        providerName,
+        providerColor: modelDraft.providerMode === "new" ? modelDraft.providerColor : undefined,
+        modelName: modelDraft.modelName,
+        modelVersion: modelDraft.modelVersion,
+        modelComment: modelDraft.modelComment,
+        isActive: modelDraft.isActive,
+      });
+    }
+
+    const [nextModels, nextProviders] = await Promise.all([loadModelOptions(), loadProvidersCatalog()]);
+    setModelOptions(nextModels);
+    setProvidersCatalog(nextProviders);
+    if (modelId) {
+      setResultForm((current) => ({ ...current, modelId }));
+    }
+    resetManagedModelDraft(nextProviders);
     setSavingModel(false);
   };
 
@@ -912,13 +1030,20 @@ export function ExperimentDetailPage() {
 
             <div className="rounded-lg border border-border/80 bg-code p-4">
               <div className="mb-2 font-mono text-xs uppercase tracking-[0.12em] text-dim">Prompt text</div>
-              <textarea
-                className="min-h-[260px] w-full resize-y bg-transparent font-mono text-sm leading-6 text-text outline-none"
-                value={settingsDraft.promptText}
-                onChange={(event) =>
-                  setSettingsDraft((current) => ({ ...current, promptText: event.target.value }))
-                }
-              />
+              <div className="grid min-h-[320px] grid-cols-[52px_minmax(0,1fr)] overflow-hidden rounded-lg border border-border/80 bg-[#050608]">
+                <div className="border-r border-border/80 bg-black/20 px-3 py-3 text-right font-mono text-xs leading-6 text-dim">
+                  {promptLineNumbers.map((line) => (
+                    <div key={line}>{line}</div>
+                  ))}
+                </div>
+                <textarea
+                  className="min-h-[320px] w-full resize-y bg-transparent px-4 py-3 font-mono text-sm leading-6 text-text outline-none"
+                  value={settingsDraft.promptText}
+                  onChange={(event) =>
+                    setSettingsDraft((current) => ({ ...current, promptText: event.target.value }))
+                  }
+                />
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -935,7 +1060,7 @@ export function ExperimentDetailPage() {
             </div>
 
             <div className="flex justify-end">
-              <Button onClick={() => void onSavePromptSettings()} disabled={savingPromptSettings}>
+              <Button onClick={() => void onSavePromptSettings()} disabled={savingPromptSettings || !promptSettingsDirty}>
                 <Save className="h-4 w-4" />
                 Save changes
               </Button>
@@ -944,52 +1069,70 @@ export function ExperimentDetailPage() {
 
           <aside className="space-y-4">
             <div className="rounded-lg border border-border/80 bg-raised p-4">
-              <div className="font-mono text-xs uppercase tracking-[0.12em] text-dim">Experiment settings</div>
-              <div className="mt-4 space-y-4">
-                <Field
-                  label="Title"
-                  value={settingsDraft.title}
-                  onChange={(value) =>
-                    setSettingsDraft((current) => ({ ...current, title: value }))
-                  }
-                />
-                <Field
-                  label="Description"
-                  value={settingsDraft.description}
-                  onChange={(value) =>
-                    setSettingsDraft((current) => ({ ...current, description: value }))
-                  }
-                  multiline
-                />
-                <SelectField
-                  label="Wrapper"
-                  value={settingsDraft.wrapperId}
-                  options={wrapperOptions}
-                  emptyLabel="No wrapper"
-                  onChange={(value) =>
-                    setSettingsDraft((current) => ({ ...current, wrapperId: value }))
-                  }
-                />
-                <SelectField
-                  label="Category"
-                  value={settingsDraft.categoryId}
-                  options={categoryOptions}
-                  emptyLabel="No category"
-                  onChange={(value) =>
-                    setSettingsDraft((current) => ({ ...current, categoryId: value }))
-                  }
-                />
+              <button
+                type="button"
+                className="flex w-full items-center justify-between gap-3 text-left"
+                onClick={() => setShowExperimentSettings((value) => !value)}
+              >
                 <div>
-                  <div className="mb-1 font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Wrapper preview</div>
-                  <pre className="max-h-[220px] overflow-auto whitespace-pre-wrap rounded-lg border border-border/80 bg-code p-3 font-mono text-xs leading-5 text-muted">
-                    {settingsDraft.wrapperId
-                      ? settingsDraft.wrapperId === workspace.wrapperId
-                        ? buildPromptForClipboard(settingsDraft.promptText ?? "", workspace.wrapperTemplate || "")
-                        : "Wrapper preview updates after save."
-                      : buildPromptForClipboard(settingsDraft.promptText ?? "", null)}
-                  </pre>
+                  <div className="font-mono text-xs uppercase tracking-[0.12em] text-dim">Experiment settings</div>
+                  <div className="mt-1 text-sm text-muted">Metadata, wrapper and category configuration.</div>
                 </div>
-              </div>
+                <ChevronDown className={cn("h-4 w-4 text-muted transition", showExperimentSettings && "rotate-180")} />
+              </button>
+              {showExperimentSettings ? (
+                <div className="mt-4 space-y-4">
+                  <Field
+                    label="Title"
+                    value={settingsDraft.title}
+                    onChange={(value) =>
+                      setSettingsDraft((current) => ({ ...current, title: value }))
+                    }
+                  />
+                  <Field
+                    label="Description"
+                    value={settingsDraft.description}
+                    onChange={(value) =>
+                      setSettingsDraft((current) => ({ ...current, description: value }))
+                    }
+                    multiline
+                  />
+                  <SelectField
+                    label="Wrapper"
+                    value={settingsDraft.wrapperId}
+                    options={wrapperOptions}
+                    emptyLabel="No wrapper"
+                    onChange={(value) =>
+                      setSettingsDraft((current) => ({ ...current, wrapperId: value }))
+                    }
+                  />
+                  <SelectField
+                    label="Category"
+                    value={settingsDraft.categoryId}
+                    options={categoryOptions}
+                    emptyLabel="No category"
+                    onChange={(value) =>
+                      setSettingsDraft((current) => ({ ...current, categoryId: value }))
+                    }
+                  />
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <ReadOnlyField label="Experiment created" value={formatLongDate(workspace.createdAt)} />
+                    <ReadOnlyField label="Experiment updated" value={formatLongDate(workspace.updatedAt)} />
+                    <ReadOnlyField label="Prompt version created" value={formatLongDate(activePrompt?.createdAt ?? "")} />
+                    <ReadOnlyField label="Current version" value={`v${activePrompt?.versionNumber ?? "-"}`} />
+                  </div>
+                  <div>
+                    <div className="mb-1 font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Wrapper preview</div>
+                    <pre className="max-h-[220px] overflow-auto whitespace-pre-wrap rounded-lg border border-border/80 bg-code p-3 font-mono text-xs leading-5 text-muted">
+                      {settingsDraft.wrapperId
+                        ? settingsDraft.wrapperId === workspace.wrapperId
+                          ? buildPromptForClipboard(settingsDraft.promptText ?? "", workspace.wrapperTemplate || "")
+                          : "Wrapper preview updates after save."
+                        : buildPromptForClipboard(settingsDraft.promptText ?? "", null)}
+                    </pre>
+                  </div>
+                </div>
+              ) : null}
             </div>
           </aside>
         </div>
@@ -1253,28 +1396,56 @@ export function ExperimentDetailPage() {
                       const selected = resultForm.modelId === option.id;
 
                       return (
-                        <button
+                        <div
                           key={option.id}
-                          type="button"
                           className={cn(
-                            "flex w-full items-start gap-3 rounded-lg border px-4 py-3 text-left transition",
+                            "flex items-start gap-3 rounded-lg border px-4 py-3 transition",
                             selected
                               ? "border-primary bg-primary-soft/20"
                               : "border-border/80 bg-surface/40 hover:bg-surface/70",
                           )}
-                          onClick={() => {
-                            setResultForm((current) => ({ ...current, modelId: option.id }));
-                            setShowModelManager(false);
-                          }}
                         >
-                          <div className="mt-0.5 text-primary">
-                            <Check className={cn("h-4 w-4", selected ? "opacity-100" : "opacity-0")} />
+                          <button
+                            type="button"
+                            className="flex min-w-0 flex-1 items-start gap-3 text-left"
+                            onClick={() => {
+                              setResultForm((current) => ({ ...current, modelId: option.id }));
+                              setShowModelManager(false);
+                            }}
+                          >
+                            <div className="mt-0.5 text-primary">
+                              <Check className={cn("h-4 w-4", selected ? "opacity-100" : "opacity-0")} />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate text-sm font-semibold text-text">{option.label}</div>
+                              <div className="mt-1 text-xs text-muted">{option.providerName}</div>
+                            </div>
+                          </button>
+                          <div className="flex shrink-0 items-center gap-1">
+                            <button
+                              type="button"
+                              className="inline-flex h-8 w-8 items-center justify-center text-muted transition hover:text-text"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                openDuplicateManagedModel(option);
+                              }}
+                              aria-label={`Duplicate ${option.label}`}
+                            >
+                              <Copy className="h-4 w-4" />
+                            </button>
+                            <button
+                              type="button"
+                              className="inline-flex h-8 w-8 items-center justify-center text-muted transition hover:text-text"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                openEditManagedModel(option);
+                              }}
+                              aria-label={`Edit ${option.label}`}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </button>
                           </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="truncate text-sm font-semibold text-text">{option.label}</div>
-                            <div className="mt-1 text-xs text-muted">{option.providerName}</div>
-                          </div>
-                        </button>
+                        </div>
                       );
                     })
                   )}
@@ -1282,15 +1453,82 @@ export function ExperimentDetailPage() {
               </div>
 
               <form className="space-y-4 rounded-lg border border-border/80 bg-surface/50 p-4" onSubmit={onCreateModel}>
-                <div className="font-mono text-xs uppercase tracking-[0.12em] text-dim">Add new model</div>
-                <label className="space-y-2">
-                  <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Provider</span>
-                  <InputLike
-                    value={modelDraft.providerName}
-                    onChange={(value) => setModelDraft((current) => ({ ...current, providerName: value }))}
-                    placeholder="OpenAI"
-                  />
-                </label>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="font-mono text-xs uppercase tracking-[0.12em] text-dim">
+                    {editingModelId ? "Edit model" : duplicatingModelId ? "Duplicate model" : "Add new model"}
+                  </div>
+                  {(editingModelId || duplicatingModelId || modelDraft.modelName || modelDraft.modelVersion || modelDraft.providerName) ? (
+                    <button
+                      type="button"
+                      className="text-xs text-muted transition hover:text-text"
+                      onClick={() => resetManagedModelDraft()}
+                    >
+                      Reset
+                    </button>
+                  ) : null}
+                </div>
+                <div className="space-y-2">
+                  <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Provider source</span>
+                  <div className="flex rounded-md border border-border/80 bg-code p-1">
+                    <button
+                      type="button"
+                      className={cn("rounded px-3 py-2 text-sm text-muted transition", modelDraft.providerMode === "existing" && "bg-surface text-text")}
+                      onClick={() => setModelDraft((current) => ({ ...current, providerMode: "existing" }))}
+                    >
+                      Existing provider
+                    </button>
+                    <button
+                      type="button"
+                      className={cn("rounded px-3 py-2 text-sm text-muted transition", modelDraft.providerMode === "new" && "bg-surface text-text")}
+                      onClick={() => setModelDraft((current) => ({ ...current, providerMode: "new" }))}
+                    >
+                      New provider
+                    </button>
+                  </div>
+                </div>
+                {modelDraft.providerMode === "existing" ? (
+                  <label className="space-y-2">
+                    <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Provider</span>
+                    <select
+                      className="h-10 w-full rounded-md border border-border/80 bg-code px-3 text-sm text-text outline-none transition focus:border-primary"
+                      value={modelDraft.providerId}
+                      onChange={(event) => setModelDraft((current) => ({ ...current, providerId: event.target.value }))}
+                    >
+                      {providersCatalog.map((provider) => (
+                        <option key={provider.id} value={provider.id}>
+                          {provider.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : (
+                  <>
+                    <label className="space-y-2">
+                      <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Provider</span>
+                      <InputLike
+                        value={modelDraft.providerName}
+                        onChange={(value) => setModelDraft((current) => ({ ...current, providerName: value }))}
+                        placeholder="OpenAI"
+                      />
+                    </label>
+                    <label className="space-y-2">
+                      <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Provider color</span>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="color"
+                          className="h-10 w-14 rounded border border-border/80 bg-code"
+                          value={modelDraft.providerColor}
+                          onChange={(event) => setModelDraft((current) => ({ ...current, providerColor: event.target.value }))}
+                        />
+                        <input
+                          className="h-10 flex-1 rounded-md border border-border/80 bg-code px-3 text-sm text-text outline-none transition focus:border-primary"
+                          value={modelDraft.providerColor}
+                          onChange={(event) => setModelDraft((current) => ({ ...current, providerColor: event.target.value }))}
+                        />
+                      </div>
+                    </label>
+                  </>
+                )}
                 <label className="space-y-2">
                   <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Model</span>
                   <InputLike
@@ -1315,10 +1553,18 @@ export function ExperimentDetailPage() {
                     placeholder="thinking high"
                   />
                 </label>
+                <label className="flex items-center gap-2 text-sm text-muted">
+                  <input
+                    type="checkbox"
+                    checked={modelDraft.isActive}
+                    onChange={(event) => setModelDraft((current) => ({ ...current, isActive: event.target.checked }))}
+                  />
+                  Active model
+                </label>
                 <div className="flex justify-end">
                   <Button type="submit" disabled={savingModel}>
-                    <Plus className="h-4 w-4" />
-                    Add model
+                    {editingModelId ? <Pencil className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                    {editingModelId ? "Save model" : duplicatingModelId ? "Create copy" : "Add model"}
                   </Button>
                 </div>
               </form>
@@ -1656,6 +1902,15 @@ function Field({
   );
 }
 
+function ReadOnlyField({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="mb-1 font-mono text-[11px] uppercase tracking-[0.12em] text-dim">{label}</div>
+      <div className="rounded-lg border border-border/80 bg-code px-3 py-2 text-sm text-muted">{value}</div>
+    </div>
+  );
+}
+
 function SelectField({
   label,
   value,
@@ -1686,4 +1941,18 @@ function SelectField({
       </select>
     </div>
   );
+}
+
+function formatLongDate(value: string) {
+  if (!value) {
+    return "—";
+  }
+
+  return new Date(value).toLocaleString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }

@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { Pencil, Plus, Search, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Copy, Pencil, Plus, Search, X } from "lucide-react";
 import { cn } from "@/shared/lib/cn";
 import {
   createModelEntry,
@@ -24,8 +24,11 @@ export function ModelsPage() {
   const [showModelModal, setShowModelModal] = useState(false);
   const [savingProvider, setSavingProvider] = useState(false);
   const [savingModel, setSavingModel] = useState(false);
+  const [duplicatingModelId, setDuplicatingModelId] = useState<string | null>(null);
   const [editingProvider, setEditingProvider] = useState<ProviderManagerItem | null>(null);
   const [editingModel, setEditingModel] = useState<ModelManagerItem | null>(null);
+  const [sortBy, setSortBy] = useState<"model" | "provider" | "usage" | "rating" | "status">("provider");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [providerDraft, setProviderDraft] = useState({ name: "", color: "#5b8def", isActive: true });
   const [modelDraft, setModelDraft] = useState({
     providerMode: "existing",
@@ -67,7 +70,7 @@ export function ModelsPage() {
   const filteredModels = useMemo(() => {
     const search = query.trim().toLowerCase();
 
-    return models.filter((model) => {
+    const filtered = models.filter((model) => {
       const matchesProvider = providerFilter === "all" ? true : model.providerId === providerFilter;
       const matchesSearch = search
         ? [model.providerName, model.name, model.version, model.comment].join(" ").toLowerCase().includes(search)
@@ -75,7 +78,37 @@ export function ModelsPage() {
 
       return matchesProvider && matchesSearch;
     });
-  }, [models, providerFilter, query]);
+
+    const direction = sortDirection === "asc" ? 1 : -1;
+
+    return filtered.sort((left, right) => {
+      if (sortBy === "provider") {
+        return (
+          (left.providerName.localeCompare(right.providerName) ||
+            left.name.localeCompare(right.name) ||
+            left.version.localeCompare(right.version)) * direction
+        );
+      }
+
+      if (sortBy === "model") {
+        return (
+          (left.name.localeCompare(right.name) ||
+            left.version.localeCompare(right.version) ||
+            left.providerName.localeCompare(right.providerName)) * direction
+        );
+      }
+
+      if (sortBy === "usage") {
+        return ((left.resultsCount - right.resultsCount) || left.name.localeCompare(right.name)) * direction;
+      }
+
+      if (sortBy === "rating") {
+        return (((left.avgRating ?? -1) - (right.avgRating ?? -1)) || left.name.localeCompare(right.name)) * direction;
+      }
+
+      return ((Number(left.isActive) - Number(right.isActive)) || left.name.localeCompare(right.name)) * direction;
+    });
+  }, [models, providerFilter, query, sortBy, sortDirection]);
 
   const openCreateProvider = () => {
     setEditingProvider(null);
@@ -91,6 +124,7 @@ export function ModelsPage() {
 
   const openCreateModel = () => {
     setEditingModel(null);
+    setDuplicatingModelId(null);
     setModelDraft({
       providerMode: providers.length ? "existing" : "new",
       providerId: providers[0]?.id ?? "",
@@ -106,6 +140,7 @@ export function ModelsPage() {
 
   const openEditModel = (model: ModelManagerItem) => {
     setEditingModel(model);
+    setDuplicatingModelId(null);
     setModelDraft({
       providerMode: "existing",
       providerId: model.providerId,
@@ -117,6 +152,32 @@ export function ModelsPage() {
       isActive: model.isActive,
     });
     setShowModelModal(true);
+  };
+
+  const duplicateModel = (model: ModelManagerItem) => {
+    setEditingModel(null);
+    setDuplicatingModelId(model.id);
+    setModelDraft({
+      providerMode: "existing",
+      providerId: model.providerId,
+      providerName: "",
+      providerColor: model.providerColor,
+      name: model.name,
+      version: `${model.version} copy`,
+      comment: model.comment,
+      isActive: model.isActive,
+    });
+    setShowModelModal(true);
+  };
+
+  const toggleSort = (column: "model" | "provider" | "usage" | "rating" | "status") => {
+    if (sortBy === column) {
+      setSortDirection((current) => (current === "asc" ? "desc" : "asc"));
+      return;
+    }
+
+    setSortBy(column);
+    setSortDirection(column === "usage" || column === "rating" ? "desc" : "asc");
   };
 
   const onSaveProvider = async (event: FormEvent<HTMLFormElement>) => {
@@ -175,6 +236,7 @@ export function ModelsPage() {
 
     setSavingModel(false);
     setShowModelModal(false);
+    setDuplicatingModelId(null);
     await refreshData();
   };
 
@@ -252,12 +314,17 @@ export function ModelsPage() {
       </div>
 
       <div className="overflow-hidden rounded-xl border border-border/80 bg-surface/70 shadow-panel">
-        <div className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_120px_120px_120px_90px] gap-3 border-b border-border/80 px-4 py-3 font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
-          <div>Model</div><div>Provider</div><div>Usage</div><div>Avg rating</div><div>Status</div><div />
+        <div className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_120px_120px_120px_128px] gap-3 border-b border-border/80 px-4 py-3 font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
+          <SortHeader label="Model" active={sortBy === "model"} direction={sortDirection} onClick={() => toggleSort("model")} />
+          <SortHeader label="Provider" active={sortBy === "provider"} direction={sortDirection} onClick={() => toggleSort("provider")} />
+          <SortHeader label="Usage" active={sortBy === "usage"} direction={sortDirection} onClick={() => toggleSort("usage")} />
+          <SortHeader label="Avg rating" active={sortBy === "rating"} direction={sortDirection} onClick={() => toggleSort("rating")} />
+          <SortHeader label="Status" active={sortBy === "status"} direction={sortDirection} onClick={() => toggleSort("status")} />
+          <div />
         </div>
         <div className="divide-y divide-border/70">
           {loading ? <div className="px-4 py-6 text-sm text-muted">Loading models...</div> : filteredModels.length ? filteredModels.map((model) => (
-            <div key={model.id} className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_120px_120px_120px_90px] items-center gap-3 px-4 py-3">
+            <div key={model.id} className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_120px_120px_120px_128px] items-center gap-3 px-4 py-3">
               <div className="min-w-0">
                 <div className="truncate text-sm font-semibold text-text">{model.name} {model.version}</div>
                 <div className="truncate text-xs text-muted">{model.comment || "No comment"}</div>
@@ -268,9 +335,14 @@ export function ModelsPage() {
               <button type="button" className={cn("justify-self-start rounded-full px-2.5 py-1 text-xs font-medium transition", model.isActive ? "bg-emerald-500/10 text-emerald-300" : "bg-white/5 text-muted")} onClick={() => void updateModelActive(model.id, !model.isActive).then(refreshData)}>
                 {model.isActive ? "Active" : "Inactive"}
               </button>
-              <button type="button" className="justify-self-end text-muted transition hover:text-text" onClick={() => openEditModel(model)} aria-label={`Edit ${model.name}`}>
-                <Pencil className="h-4 w-4" />
-              </button>
+              <div className="flex items-center justify-end gap-2">
+                <button type="button" className="text-muted transition hover:text-text" onClick={() => duplicateModel(model)} aria-label={`Duplicate ${model.name}`}>
+                  <Copy className="h-4 w-4" />
+                </button>
+                <button type="button" className="text-muted transition hover:text-text" onClick={() => openEditModel(model)} aria-label={`Edit ${model.name}`}>
+                  <Pencil className="h-4 w-4" />
+                </button>
+              </div>
             </div>
           )) : <div className="px-4 py-6 text-sm text-muted">No models match the current filters.</div>}
         </div>
@@ -300,8 +372,8 @@ export function ModelsPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
           <form className="w-full max-w-2xl rounded-xl border border-border/80 bg-raised p-5 shadow-panel" onSubmit={onSaveModel}>
             <div className="flex items-center justify-between gap-3">
-              <div><h2 className="font-mono text-xl font-semibold text-text">{editingModel ? "Edit model" : "Add model"}</h2><p className="mt-1 text-sm text-muted">Create a reusable model configuration for experiment results.</p></div>
-              <button type="button" className="inline-flex h-9 w-9 items-center justify-center text-muted transition hover:text-text" onClick={() => setShowModelModal(false)} aria-label="Close dialog"><X className="h-4 w-4" /></button>
+              <div><h2 className="font-mono text-xl font-semibold text-text">{editingModel ? "Edit model" : duplicatingModelId ? "Duplicate model" : "Add model"}</h2><p className="mt-1 text-sm text-muted">Create a reusable model configuration for experiment results.</p></div>
+              <button type="button" className="inline-flex h-9 w-9 items-center justify-center text-muted transition hover:text-text" onClick={() => { setShowModelModal(false); setDuplicatingModelId(null); }} aria-label="Close dialog"><X className="h-4 w-4" /></button>
             </div>
             <div className="mt-5 grid gap-4 md:grid-cols-2">
               {!editingModel ? <div className="space-y-2 md:col-span-2"><div className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Provider source</div><div className="flex rounded-md border border-border/80 bg-code p-1"><button type="button" className={cn("rounded px-3 py-2 text-sm text-muted transition", modelDraft.providerMode === "existing" && "bg-surface text-text")} onClick={() => setModelDraft((current) => ({ ...current, providerMode: "existing" }))}>Existing provider</button><button type="button" className={cn("rounded px-3 py-2 text-sm text-muted transition", modelDraft.providerMode === "new" && "bg-surface text-text")} onClick={() => setModelDraft((current) => ({ ...current, providerMode: "new" }))}>New provider</button></div></div> : null}
@@ -315,13 +387,32 @@ export function ModelsPage() {
               <label className="flex items-center gap-2 text-sm text-muted md:col-span-2"><input type="checkbox" checked={modelDraft.isActive} onChange={(event) => setModelDraft((current) => ({ ...current, isActive: event.target.checked }))} />Active model</label>
             </div>
             <div className="mt-6 flex justify-end gap-2">
-              <Button type="button" variant="ghost" onClick={() => setShowModelModal(false)}>Cancel</Button>
-              <Button type="submit" disabled={savingModel}>{editingModel ? "Save model" : "Create model"}</Button>
+              <Button type="button" variant="ghost" onClick={() => { setShowModelModal(false); setDuplicatingModelId(null); }}>Cancel</Button>
+              <Button type="submit" disabled={savingModel}>{editingModel ? "Save model" : duplicatingModelId ? "Create copy" : "Create model"}</Button>
             </div>
           </form>
         </div>
       ) : null}
     </section>
+  );
+}
+
+function SortHeader({
+  label,
+  active,
+  direction,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  direction: "asc" | "desc";
+  onClick: () => void;
+}) {
+  return (
+    <button type="button" className={cn("inline-flex items-center gap-1 text-left transition hover:text-text", active ? "text-text" : "text-dim")} onClick={onClick}>
+      <span>{label}</span>
+      {active ? direction === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" /> : null}
+    </button>
   );
 }
 

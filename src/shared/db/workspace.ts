@@ -25,10 +25,13 @@ export type SelectOption = {
 export type ModelSelectOption = {
   id: string;
   label: string;
+  providerId: string;
+  providerColor: string;
   providerName: string;
   modelName: string;
   modelVersion: string;
   modelComment: string;
+  isActive: boolean;
 };
 
 export type CategoryManagerItem = {
@@ -237,10 +240,13 @@ export async function loadModelOptions(): Promise<ModelSelectOption[]> {
       return {
         id: model.id,
         label: `${providerName} / ${model.name} ${model.version}${commentPart}`,
+        providerId: model.providerId,
+        providerColor: providersById.get(model.providerId)?.color ?? "#5b8def",
         providerName,
         modelName: model.name,
         modelVersion: model.version,
         modelComment: model.comment,
+        isActive: model.isActive,
       };
     });
 }
