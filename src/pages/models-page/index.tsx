@@ -1,5 +1,5 @@
 import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, Copy, Download, Link2, Pencil, Plus, RefreshCcw, Search, Upload, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Copy, Download, Link2, Pencil, Plus, RefreshCcw, Search, Trash2, Upload, X } from "lucide-react";
 import { cn } from "@/shared/lib/cn";
 import {
   applyCatalogPreset,
@@ -8,6 +8,7 @@ import {
   createModelFromCatalog,
   createModelEntry,
   createProviderEntry,
+  deleteModelEntry,
   importCatalogFromJsonText,
   loadCatalogBrowserItems,
   loadCatalogPresets,
@@ -48,9 +49,12 @@ export function ModelsPage() {
   const [providerFilter, setProviderFilter] = useState("all");
   const [sourceFilter, setSourceFilter] = useState<"all" | "manual" | "catalog" | "review">("all");
   const [showProviderModal, setShowProviderModal] = useState(false);
+  const [showProvidersManager, setShowProvidersManager] = useState(false);
   const [showModelModal, setShowModelModal] = useState(false);
+  const [showDeleteModel, setShowDeleteModel] = useState<ModelManagerItem | null>(null);
   const [savingProvider, setSavingProvider] = useState(false);
   const [savingModel, setSavingModel] = useState(false);
+  const [deletingModel, setDeletingModel] = useState(false);
   const [catalogBusy, setCatalogBusy] = useState<"" | "sync" | "preset" | "import" | "create" | "match">("");
   const [catalogError, setCatalogError] = useState("");
   const importInputRef = useRef<HTMLInputElement | null>(null);
@@ -237,13 +241,37 @@ export function ModelsPage() {
     }
   };
 
+  const onDeleteModel = (model: ModelManagerItem) => {
+    setShowDeleteModel(model);
+  };
+
+  const onConfirmDeleteModel = async () => {
+    if (!showDeleteModel) {
+      return;
+    }
+
+    setDeletingModel(true);
+    setCatalogError("");
+    try {
+      await deleteModelEntry(showDeleteModel.id);
+      setShowDeleteModel(null);
+      await refreshData();
+    } catch (error) {
+      setCatalogError(error instanceof Error ? error.message : "Could not delete model.");
+    } finally {
+      setDeletingModel(false);
+    }
+  };
+
   const openCreateProvider = () => {
+    setShowProvidersManager(false);
     setEditingProvider(null);
     setProviderDraft({ name: "", color: "#5b8def", isActive: true });
     setShowProviderModal(true);
   };
 
   const openEditProvider = (provider: ProviderManagerItem) => {
+    setShowProvidersManager(false);
     setEditingProvider(provider);
     setProviderDraft({ name: provider.name, color: provider.color, isActive: provider.isActive });
     setShowProviderModal(true);
@@ -368,7 +396,7 @@ export function ModelsPage() {
   };
 
   return (
-    <section className="space-y-5">
+    <section className="flex h-[calc(100vh-2rem)] min-h-0 flex-col gap-5 overflow-hidden">
       <input ref={importInputRef} type="file" accept=".json,application/json" className="hidden" onChange={onImportCatalogFile} />
 
       <div className="space-y-4">
@@ -411,7 +439,7 @@ export function ModelsPage() {
       </div>
 
       {activeTab === "catalog" ? (
-        <div className="rounded-xl border border-border/80 bg-surface/70 p-5 shadow-panel">
+        <div className="min-h-0 overflow-y-auto rounded-xl border border-border/80 bg-surface/70 p-5 shadow-panel">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <div className="font-mono text-xs uppercase tracking-[0.14em] text-dim">Catalog</div>
@@ -511,7 +539,7 @@ export function ModelsPage() {
       ) : null}
 
       {activeTab === "mine" ? (
-        <>
+        <div className="flex min-h-0 flex-1 flex-col gap-4">
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/80 bg-surface/70 px-5 py-4 shadow-panel">
             <div>
               <h2 className="font-mono text-2xl font-semibold text-text">My models</h2>
@@ -527,9 +555,9 @@ export function ModelsPage() {
                   placeholder="Search models or providers..."
                 />
               </label>
-              <Button variant="ghost" onClick={openCreateProvider}>
-                <Plus className="h-4 w-4" />
-                Add provider
+              <Button variant="ghost" onClick={() => setShowProvidersManager(true)}>
+                <Pencil className="h-4 w-4" />
+                Manage providers
               </Button>
               <Button onClick={openCreateModel}>
                 <Plus className="h-4 w-4" />
@@ -567,7 +595,7 @@ export function ModelsPage() {
             </div>
           ) : null}
 
-          <div className="overflow-hidden rounded-xl border border-border/80 bg-surface/70 shadow-panel">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border/80 bg-surface/70 shadow-panel">
             <div className="border-b border-border/80 px-4 py-4">
               <div className="flex flex-wrap items-center gap-2">
                 {(["all", "manual", "catalog", "review"] as const).map((value) => (
@@ -585,7 +613,8 @@ export function ModelsPage() {
                 ))}
               </div>
 
-              <div className="mt-3 flex flex-wrap items-center gap-2">
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Providers</div>
                 <button
                   type="button"
                   className={cn("rounded-full border px-3 py-1.5 text-sm transition", providerFilter === "all" ? "border-primary bg-primary-soft/50 text-primary" : "border-border/80 text-muted")}
@@ -597,34 +626,18 @@ export function ModelsPage() {
                   <button
                     key={provider.id}
                     type="button"
-                    className={cn("inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition", providerFilter === provider.id ? "border-primary bg-primary-soft/50 text-primary" : "border-border/80 text-muted hover:text-text")}
+                    className={cn(
+                      "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition",
+                      providerFilter === provider.id
+                        ? "border-primary bg-primary-soft/50 text-primary"
+                        : "border-border/80 text-muted hover:text-text",
+                    )}
                     onClick={() => setProviderFilter((current) => (current === provider.id ? "all" : provider.id))}
                   >
                     <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: provider.color }} />
                     <span>{provider.name}</span>
                     <span className="font-mono text-[11px] text-dim">{provider.modelCount}</span>
                   </button>
-                ))}
-              </div>
-
-              <div className="mt-4 grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
-                {providers.map((provider) => (
-                  <div key={provider.id} className="rounded-lg border border-border/80 bg-code px-4 py-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: provider.color }} />
-                          <div className="truncate text-sm font-semibold text-text">{provider.name}</div>
-                        </div>
-                        <div className="mt-1 text-xs text-muted">
-                          {provider.modelCount} model{provider.modelCount === 1 ? "" : "s"} • {provider.isActive ? "Active" : "Inactive"}
-                        </div>
-                      </div>
-                      <button type="button" className="text-muted transition hover:text-text" onClick={() => openEditProvider(provider)} aria-label={`Edit ${provider.name}`}>
-                        <Pencil className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </div>
                 ))}
               </div>
             </div>
@@ -638,7 +651,7 @@ export function ModelsPage() {
               <SortHeader label="Status" active={sortBy === "status"} direction={sortDirection} onClick={() => toggleSort("status")} />
               <div />
             </div>
-            <div className="divide-y divide-border/70">
+            <div className="min-h-0 flex-1 overflow-y-auto divide-y divide-border/70">
               {loading ? <div className="px-4 py-6 text-sm text-muted">Loading models...</div> : filteredModels.length ? filteredModels.map((model) => (
                 <div key={model.id} className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_120px_120px_120px_120px_128px] items-center gap-3 px-4 py-3">
                   <div className="min-w-0">
@@ -659,6 +672,9 @@ export function ModelsPage() {
                     {model.isActive ? "Active" : "Inactive"}
                   </button>
                   <div className="flex items-center justify-end gap-2">
+                    <button type="button" className="text-muted transition hover:text-red-300" onClick={() => onDeleteModel(model)} aria-label={`Delete ${model.name}`}>
+                      <Trash2 className="h-4 w-4" />
+                    </button>
                     <button type="button" className="text-muted transition hover:text-text" onClick={() => duplicateModel(model)} aria-label={`Duplicate ${model.name}`}>
                       <Copy className="h-4 w-4" />
                     </button>
@@ -670,7 +686,7 @@ export function ModelsPage() {
               )) : <div className="px-4 py-6 text-sm text-muted">No models match the current filters.</div>}
             </div>
           </div>
-        </>
+        </div>
       ) : null}
 
       {showProviderModal ? (
@@ -690,6 +706,57 @@ export function ModelsPage() {
               <Button type="submit" disabled={savingProvider}>{editingProvider ? "Save provider" : "Create provider"}</Button>
             </div>
           </form>
+        </div>
+      ) : null}
+
+      {showProvidersManager ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-2xl rounded-xl border border-border/80 bg-raised p-5 shadow-panel">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="font-mono text-xl font-semibold text-text">Manage providers</h2>
+                <p className="mt-1 text-sm text-muted">Edit provider metadata without cluttering the model filters.</p>
+              </div>
+              <button
+                type="button"
+                className="inline-flex h-9 w-9 items-center justify-center text-muted transition hover:text-text"
+                onClick={() => setShowProvidersManager(false)}
+                aria-label="Close dialog"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-5 max-h-[60vh] space-y-2 overflow-y-auto pr-1">
+              {providers.map((provider) => (
+                <div key={provider.id} className="flex items-center justify-between gap-3 rounded-lg border border-border/80 bg-code/70 px-4 py-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: provider.color }} />
+                      <div className="truncate text-sm font-semibold text-text">{provider.name}</div>
+                    </div>
+                    <div className="mt-1 text-xs text-muted">
+                      {provider.modelCount} model{provider.modelCount === 1 ? "" : "s"} • {provider.isActive ? "Active" : "Inactive"}
+                    </div>
+                  </div>
+                  <Button type="button" variant="ghost" onClick={() => openEditProvider(provider)}>
+                    <Pencil className="h-4 w-4" />
+                    Edit
+                  </Button>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-6 flex justify-end gap-2">
+              <Button type="button" variant="ghost" onClick={() => setShowProvidersManager(false)}>
+                Close
+              </Button>
+              <Button type="button" onClick={openCreateProvider}>
+                <Plus className="h-4 w-4" />
+                Add provider
+              </Button>
+            </div>
+          </div>
         </div>
       ) : null}
 
@@ -716,6 +783,45 @@ export function ModelsPage() {
               <Button type="submit" disabled={savingModel}>{editingModel ? "Save model" : duplicatingModelId ? "Create copy" : "Create model"}</Button>
             </div>
           </form>
+        </div>
+      ) : null}
+
+      {showDeleteModel ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-md rounded-xl border border-border/80 bg-raised p-5 shadow-panel">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="font-mono text-xl font-semibold text-text">Delete model</h2>
+                <p className="mt-1 text-sm text-muted">
+                  This will remove the model from your local workspace if it is not used by saved results.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="inline-flex h-9 w-9 items-center justify-center text-muted transition hover:text-text"
+                onClick={() => setShowDeleteModel(null)}
+                aria-label="Close dialog"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="mt-5 rounded-lg border border-border/80 bg-code px-4 py-3 text-sm text-text">
+              {showDeleteModel.name} {showDeleteModel.version}
+              <div className="mt-1 text-xs text-muted">{showDeleteModel.providerName}</div>
+              <div className="mt-1 text-xs text-muted">
+                {showDeleteModel.resultsCount} result{showDeleteModel.resultsCount === 1 ? "" : "s"}
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end gap-2">
+              <Button type="button" variant="ghost" onClick={() => setShowDeleteModel(null)}>
+                Cancel
+              </Button>
+              <Button type="button" onClick={() => void onConfirmDeleteModel()} disabled={deletingModel}>
+                <Trash2 className="h-4 w-4" />
+                Delete
+              </Button>
+            </div>
+          </div>
         </div>
       ) : null}
     </section>

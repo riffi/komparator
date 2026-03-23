@@ -94,6 +94,7 @@ export function ExperimentDetailPage() {
   const [deletingResult, setDeletingResult] = useState(false);
   const [showAddResult, setShowAddResult] = useState(false);
   const [showModelManager, setShowModelManager] = useState(false);
+  const [modelManagerTarget, setModelManagerTarget] = useState<"add" | "edit">("add");
   const [showResultNotesField, setShowResultNotesField] = useState(false);
   const [savingResult, setSavingResult] = useState(false);
   const [savingModel, setSavingModel] = useState(false);
@@ -120,6 +121,7 @@ export function ExperimentDetailPage() {
     notes: "",
   });
   const [editResultDraft, setEditResultDraft] = useState({
+    modelId: "",
     htmlContent: "",
     notes: "",
   });
@@ -423,8 +425,11 @@ export function ExperimentDetailPage() {
   }, [catalogItems, modelLibraryTab, modelProviderFilter, modelSearch]);
 
   const selectedModel = modelOptions.find((option) => option.id === resultForm.modelId);
+  const selectedEditModel = modelOptions.find((option) => option.id === editResultDraft.modelId);
+  const currentManagedModelId = modelManagerTarget === "edit" ? editResultDraft.modelId : resultForm.modelId;
   const selectedManagerModel =
-    filteredModelOptions.find((option) => option.id === resultForm.modelId) ?? selectedModel;
+    filteredModelOptions.find((option) => option.id === currentManagedModelId) ??
+    modelOptions.find((option) => option.id === currentManagedModelId);
   const selectedResultIndex = selectedResult ? visibleResults.findIndex((item) => item.id === selectedResult.id) : -1;
   const selectedResultHtml = selectedResult ? resultHtmlById[selectedResult.id] : undefined;
   const slotAHtml = slotA ? resultHtmlById[slotA.id] : undefined;
@@ -511,6 +516,7 @@ export function ExperimentDetailPage() {
     const htmlContent = (await ensureResultHtml(result.id)) ?? "";
     setEditingResult(result);
     setEditResultDraft({
+      modelId: result.modelId,
       htmlContent,
       notes: result.notes,
     });
@@ -527,6 +533,7 @@ export function ExperimentDetailPage() {
     await updateResultEntry({
       resultId: editingResult.id,
       experimentId: workspace.id,
+      modelId: editResultDraft.modelId,
       htmlContent: editResultDraft.htmlContent,
       notes: editResultDraft.notes,
     });
@@ -764,7 +771,11 @@ export function ExperimentDetailPage() {
     setModelOptions(nextModels);
     setProvidersCatalog(nextProviders);
     setCatalogItems(nextCatalogItems);
-    setResultForm((current) => ({ ...current, modelId }));
+    if (modelManagerTarget === "edit") {
+      setEditResultDraft((current) => ({ ...current, modelId }));
+    } else {
+      setResultForm((current) => ({ ...current, modelId }));
+    }
     setShowModelManager(false);
     setSavingModel(false);
   };
@@ -781,7 +792,11 @@ export function ExperimentDetailPage() {
     setProvidersCatalog(nextProviders);
     setCatalogItems(nextCatalogItems);
     if (loaded[0]) {
-      setResultForm((current) => ({ ...current, modelId: loaded[0] }));
+      if (modelManagerTarget === "edit") {
+        setEditResultDraft((current) => ({ ...current, modelId: loaded[0] }));
+      } else {
+        setResultForm((current) => ({ ...current, modelId: loaded[0] }));
+      }
     }
     setSavingModel(false);
   };
@@ -944,17 +959,20 @@ export function ExperimentDetailPage() {
                         style={{ backgroundColor: result.providerColor }}
                       />
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <div className="truncate text-sm font-semibold text-text">
+                        <div className="flex min-w-0 items-start gap-2">
+                          <div
+                            className="min-w-0 flex-1 break-words text-sm font-semibold leading-snug text-text"
+                            title={`${result.providerName} / ${result.modelName} ${result.modelVersion}`}
+                          >
                             {result.providerName} / {result.modelName} {result.modelVersion}
                           </div>
                           {viewMode === "sbs" && isA ? (
-                            <span className="rounded bg-primary-soft/60 px-1.5 py-0.5 font-mono text-[10px] text-primary">
+                            <span className="shrink-0 rounded bg-primary-soft/60 px-1.5 py-0.5 font-mono text-[10px] text-primary">
                               A
                             </span>
                           ) : null}
                           {viewMode === "sbs" && isB ? (
-                            <span className="rounded bg-orange-500/10 px-1.5 py-0.5 font-mono text-[10px] text-orange-300">
+                            <span className="shrink-0 rounded bg-orange-500/10 px-1.5 py-0.5 font-mono text-[10px] text-orange-300">
                               B
                             </span>
                           ) : null}
@@ -1035,7 +1053,10 @@ export function ExperimentDetailPage() {
                             className="h-2.5 w-2.5 rounded-full"
                             style={{ backgroundColor: selectedResult?.providerColor }}
                           />
-                          <div className="truncate text-sm font-semibold text-text">
+                          <div
+                            className="min-w-0 flex-1 break-words text-sm font-semibold leading-snug text-text"
+                            title={`${selectedResult?.providerName ?? ""} / ${selectedResult?.modelName ?? ""} ${selectedResult?.modelVersion ?? ""}`}
+                          >
                             {selectedResult?.providerName ?? ""} / {selectedResult?.modelName ?? ""}{" "}
                             {selectedResult?.modelVersion ?? ""}
                           </div>
@@ -1382,7 +1403,14 @@ export function ExperimentDetailPage() {
                       {selectedModel?.label ?? "No model selected yet."}
                     </div>
                   </div>
-                  <Button type="button" variant="ghost" onClick={() => setShowModelManager(true)}>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => {
+                      setModelManagerTarget("add");
+                      setShowModelManager(true);
+                    }}
+                  >
                     <Pencil className="h-4 w-4" />
                     Choose model
                   </Button>
@@ -1458,6 +1486,32 @@ export function ExperimentDetailPage() {
               </button>
             </div>
             <div className="mt-5 space-y-4">
+              <div className="space-y-2">
+                <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Model</div>
+                <div className="flex items-center justify-between gap-3 rounded-lg border border-border/80 bg-code px-3 py-3">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-semibold text-text">
+                      {selectedEditModel?.label ?? "No model selected"}
+                    </div>
+                    <div className="mt-1 text-xs text-muted">
+                      Reassign this result to another local model if needed.
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => {
+                      setModelManagerTarget("edit");
+                      setShowModelManager(true);
+                    }}
+                  >
+                    Change model
+                  </Button>
+                </div>
+                <div className="text-xs text-muted">
+                  If you reassign the result to another model, the attempt number and aggregate stats will be recalculated automatically.
+                </div>
+              </div>
               <div className="space-y-2">
                 <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">HTML output</div>
                 <textarea
@@ -1605,7 +1659,7 @@ export function ExperimentDetailPage() {
                       </div>
                     ) : (
                       filteredModelOptions.map((option) => {
-                        const selected = resultForm.modelId === option.id;
+                        const selected = currentManagedModelId === option.id;
 
                         return (
                           <div
@@ -1621,7 +1675,11 @@ export function ExperimentDetailPage() {
                               type="button"
                               className="flex min-w-0 flex-1 items-start gap-3 text-left"
                               onClick={() => {
-                                setResultForm((current) => ({ ...current, modelId: option.id }));
+                                if (modelManagerTarget === "edit") {
+                                  setEditResultDraft((current) => ({ ...current, modelId: option.id }));
+                                } else {
+                                  setResultForm((current) => ({ ...current, modelId: option.id }));
+                                }
                                 setShowModelManager(false);
                               }}
                             >
@@ -1670,7 +1728,7 @@ export function ExperimentDetailPage() {
                     </div>
                   ) : (
                     filteredCatalogItems.map((item) => {
-                      const selected = item.linkedLocalModelId && resultForm.modelId === item.linkedLocalModelId;
+                      const selected = item.linkedLocalModelId && currentManagedModelId === item.linkedLocalModelId;
 
                       return (
                         <div
@@ -2141,7 +2199,12 @@ function ComparePanel({ label, result, htmlContent, loading, device, showCode, a
         <span className={cn("rounded px-1.5 py-0.5 font-mono text-[10px]", accent === "blue" ? "bg-primary-soft/60 text-primary" : "bg-orange-500/10 text-orange-300")}>{label}</span>
         <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: result.providerColor }} />
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-semibold text-text">{result.providerName} / {result.modelName} {result.modelVersion}</div>
+          <div
+            className="break-words text-sm font-semibold leading-snug text-text"
+            title={`${result.providerName} / ${result.modelName} ${result.modelVersion}`}
+          >
+            {result.providerName} / {result.modelName} {result.modelVersion}
+          </div>
           <div className="truncate text-[11px] text-dim">Attempt {result.attempt} • {result.modelComment || "No comment"}</div>
         </div>
         <div className={cn("font-mono text-sm", result.rating ? ratingToneClass(result.rating) : "text-dim")}>{result.rating ?? "—"}</div>

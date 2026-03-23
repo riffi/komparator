@@ -16,6 +16,9 @@ It helps you collect outputs, review them visually, compare them side by side, a
 - ⚖️ Compare two results side by side
 - ⭐ Rate results on a 1-10 scale
 - 🗂️ Organize experiments by category
+- 🧭 Keep your own working model list separate from the reference catalog
+- 📥 Load popular models quickly or import updated model catalogs
+- ✏️ Fix a saved result if it was attached to the wrong model
 - 📊 View aggregate stats across your workspace
 - 💾 Export and restore your local data
 
@@ -24,8 +27,10 @@ It helps you collect outputs, review them visually, compare them side by side, a
 1. Create an experiment.
 2. Add or edit the prompt for that experiment.
 3. Copy the prepared prompt into one or more LLM chats.
-4. Paste the returned HTML results back into Komparator.
-5. Review the render, compare outputs, and assign ratings.
+4. Choose the model you used from your own model list or from the catalog.
+5. Paste the returned HTML result back into Komparator.
+6. Review the render, compare outputs, and assign ratings.
+7. If you picked the wrong model by mistake, update it later from the saved result.
 
 ## Main Sections
 
@@ -41,12 +46,17 @@ Here you can:
 
 ### 🤖 Models
 
-Catalog of providers and model variants you use in comparisons.
+Your model workspace and the reference catalog live together here.
 
 Use this section to:
-- add new models
+- manage your own working list of models
+- load popular models into your workspace
+- browse the catalog separately from your own models
 - keep provider names and colors consistent
-- manage active/inactive model entries
+- review possible duplicate models
+
+`My models` is your actual working list.  
+`Catalog` is a reference source you can use to add new models without cluttering your existing workspace.
 
 ### 🧩 Wrappers
 
@@ -83,6 +93,8 @@ That means:
 
 If the data matters, use backup export regularly.
 
+The model catalog can be updated inside the app, but your own saved models and experiment results stay separate from that catalog.
+
 ## Backup and Restore
 
 ### 💾 Export Backup
@@ -109,6 +121,8 @@ Important:
 
 - 🌐 The app is meant for HTML-based comparison workflows
 - 🧾 Results are stored as raw HTML so you can inspect and compare actual renders
+- 🗃️ The built-in catalog helps you find common models faster, but you can always keep custom models in your own list
+- 🔁 If you linked a result to the wrong model, you can correct it later from the result editor
 - 🔒 The project works without a backend; your workspace stays local unless you export it
 - 🖥️ Best experience is on desktop or laptop because preview and side-by-side comparison need space
 

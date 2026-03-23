@@ -1,5 +1,6 @@
 import { BarChart3, Braces, ChevronLeft, ChevronRight, FolderKanban, Grid2x2, Settings } from "lucide-react";
 import { NavLink } from "react-router-dom";
+import { appVersion } from "@/shared/config/app-version";
 import { navigationItems } from "@/shared/config/navigation";
 import { cn } from "@/shared/lib/cn";
 import { shellStore } from "@/widgets/app-shell/ui/shell-store";
@@ -33,9 +34,14 @@ export function AppSidebar() {
               <span className="text-xl text-primary">◈</span>
             </div>
           ) : (
-            <div className="font-mono text-[15px] font-semibold tracking-[-0.04em] text-text">
-              <span className="mr-2 text-primary">◈</span>
-              Komparator
+            <div className="flex items-baseline gap-2 font-mono">
+              <div className="text-[15px] font-semibold tracking-[-0.04em] text-text">
+                <span className="mr-2 text-primary">◈</span>
+                Komparator
+              </div>
+              <span className="rounded-full border border-border/80 bg-code px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-dim">
+                v{appVersion}
+              </span>
             </div>
           )}
         </div>

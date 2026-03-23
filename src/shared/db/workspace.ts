@@ -1170,6 +1170,21 @@ export async function updateModelActive(modelId: string, isActive: boolean) {
   await db.models.update(modelId, { isActive });
 }
 
+export async function deleteModelEntry(modelId: string) {
+  const linkedResultsCount = await db.results.where("modelId").equals(modelId).count();
+  if (linkedResultsCount > 0) {
+    throw new Error("This model is used by saved results. Reassign or remove those results first.");
+  }
+
+  await db.transaction("rw", [db.models, db.modelMatches], async () => {
+    await db.models.delete(modelId);
+    await db.modelMatches.where("localModelId").equals(modelId).delete();
+  });
+
+  await recomputeModelMatches();
+  await rebuildStatsAggregates();
+}
+
 export async function loadWrappersCatalog(): Promise<WrapperManagerItem[]> {
   const [wrappers, experiments] = await Promise.all([db.wrappers.toArray(), db.experiments.toArray()]);
   const counts = new Map<string, number>();
@@ -1477,6 +1492,7 @@ export async function updateResultRating(resultId: string, rating: number | null
 export async function updateResultEntry(input: {
   resultId: string;
   experimentId: string;
+  modelId: string;
   htmlContent: string;
   notes: string;
 }) {
@@ -1484,16 +1500,63 @@ export async function updateResultEntry(input: {
   const htmlContent = input.htmlContent.trim();
   const notes = input.notes.trim();
 
-  await db.transaction("rw", [db.results, db.experiments], async () => {
+  await db.transaction("rw", [db.results, db.models, db.experiments], async () => {
+    const result = await db.results.get(input.resultId);
+    if (!result) {
+      throw new Error("Result no longer exists.");
+    }
+
+    const nextModel = await db.models.get(input.modelId);
+    if (!nextModel) {
+      throw new Error("Selected model no longer exists.");
+    }
+
+    const previousModelId = result.modelId;
+    let nextAttempt = result.attempt;
+
+    if (previousModelId !== input.modelId) {
+      const previousAttempts = await db.results
+        .where("[promptVersionId+modelId+attempt]")
+        .between([result.promptVersionId, input.modelId, Dexie.minKey], [result.promptVersionId, input.modelId, Dexie.maxKey])
+        .toArray();
+      nextAttempt = previousAttempts.filter((item) => item.id !== result.id).length + 1;
+    }
+
     await db.results.update(input.resultId, {
+      modelId: input.modelId,
+      attempt: nextAttempt,
       htmlContent,
       notes,
       fileSizeBytes: new Blob([htmlContent]).size,
       lineCount: countLines(htmlContent),
     });
 
+    const oldModelResults =
+      previousModelId !== input.modelId ? await db.results.where("modelId").equals(previousModelId).toArray() : [];
+    const newModelResults = await db.results.where("modelId").equals(input.modelId).toArray();
+
+    if (previousModelId !== input.modelId) {
+      const oldLastUsedAt =
+        oldModelResults.length > 0
+          ? oldModelResults.reduce((latest, item) =>
+              Date.parse(item.createdAt) > Date.parse(latest.createdAt) ? item : latest,
+            ).createdAt
+          : null;
+      await db.models.update(previousModelId, { lastUsedAt: oldLastUsedAt });
+    }
+
+    const newLastUsedAt =
+      newModelResults.length > 0
+        ? newModelResults.reduce((latest, item) =>
+            Date.parse(item.createdAt) > Date.parse(latest.createdAt) ? item : latest,
+          ).createdAt
+        : null;
+    await db.models.update(input.modelId, { lastUsedAt: newLastUsedAt });
+
     await db.experiments.update(input.experimentId, { updatedAt: now });
   });
+
+  await rebuildStatsAggregates();
 }
 
 export async function deleteResultEntry(input: { resultId: string; experimentId: string }) {
