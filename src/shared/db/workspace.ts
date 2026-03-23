@@ -525,14 +525,18 @@ export async function deleteWrapperEntry(wrapperId: string) {
 }
 
 export async function loadExperimentsList(): Promise<ExperimentListItem[]> {
-  const [experiments, categories, promptVersions, results] = await Promise.all([
+  const [experiments, categories, promptVersions, results, models, providers] = await Promise.all([
     db.experiments.toArray(),
     db.categories.toArray(),
     db.promptVersions.toArray(),
     db.results.toArray(),
+    db.models.toArray(),
+    db.providers.toArray(),
   ]);
 
   const categoriesById = new Map(categories.map((item) => [item.id, item]));
+  const modelsById = new Map(models.map((item) => [item.id, item]));
+  const providersById = new Map(providers.map((item) => [item.id, item]));
   const promptVersionsByExperiment = new Map<string, typeof promptVersions>();
 
   for (const version of promptVersions) {
@@ -556,6 +560,15 @@ export async function loadExperimentsList(): Promise<ExperimentListItem[]> {
     const avgRating = ratedResults.length
       ? ratedResults.reduce((sum, item) => sum + (item.rating ?? 0), 0) / ratedResults.length
       : null;
+    const topResult =
+      [...experimentResults].sort((left, right) => {
+        const leftRating = left.rating ?? -1;
+        const rightRating = right.rating ?? -1;
+        return rightRating - leftRating || Date.parse(right.createdAt) - Date.parse(left.createdAt);
+      })[0] ?? null;
+    const topResultModel = topResult ? modelsById.get(topResult.modelId) : null;
+    const topResultProvider =
+      topResultModel ? providersById.get(topResultModel.providerId) ?? null : null;
 
     return {
       id: experiment.id,
@@ -572,6 +585,17 @@ export async function loadExperimentsList(): Promise<ExperimentListItem[]> {
       updatedAt: experiment.updatedAt,
       createdLabel: formatCreatedLabel(experiment.createdAt),
       updatedLabel: formatUpdatedLabel(experiment.updatedAt),
+      topResultPreview:
+        topResult && topResultModel && topResultProvider
+          ? {
+              htmlContent: topResult.htmlContent,
+              rating: topResult.rating,
+              providerName: topResultProvider.name,
+              providerColor: topResultProvider.color,
+              modelName: topResultModel.name,
+              modelVersion: topResultModel.version,
+            }
+          : null,
     } satisfies ExperimentListItem;
   });
 }

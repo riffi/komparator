@@ -326,6 +326,7 @@ export const seedExperiments: ExperimentListItem[] = [
     updatedAt: "2026-03-23T08:00:00.000Z",
     createdLabel: "Jan 15, 2026",
     updatedLabel: "2 hours ago",
+    topResultPreview: null,
   },
   {
     id: "saas-hero-section-variants",
@@ -343,6 +344,7 @@ export const seedExperiments: ExperimentListItem[] = [
     updatedAt: "2026-03-23T05:00:00.000Z",
     createdLabel: "Jan 12, 2026",
     updatedLabel: "5 hours ago",
+    topResultPreview: null,
   },
   {
     id: "interactive-chart-rendering",
@@ -360,6 +362,7 @@ export const seedExperiments: ExperimentListItem[] = [
     updatedAt: "2026-03-20T10:00:00.000Z",
     createdLabel: "Dec 28, 2025",
     updatedLabel: "3 days ago",
+    topResultPreview: null,
   },
   {
     id: "multi-step-form-wizard",
@@ -377,6 +380,7 @@ export const seedExperiments: ExperimentListItem[] = [
     updatedAt: "2026-03-22T10:00:00.000Z",
     createdLabel: "Jan 20, 2026",
     updatedLabel: "1 day ago",
+    topResultPreview: null,
   },
   {
     id: "transactional-email-layouts",
@@ -394,6 +398,7 @@ export const seedExperiments: ExperimentListItem[] = [
     updatedAt: "2026-03-23T01:00:00.000Z",
     createdLabel: "Jan 8, 2026",
     updatedLabel: "12 hours ago",
+    topResultPreview: null,
   },
   {
     id: "pricing-page-showdown",
@@ -411,6 +416,7 @@ export const seedExperiments: ExperimentListItem[] = [
     updatedAt: "2026-03-16T10:00:00.000Z",
     createdLabel: "Dec 15, 2025",
     updatedLabel: "1 week ago",
+    topResultPreview: null,
   },
 ];
 

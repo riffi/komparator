@@ -86,7 +86,7 @@ screens:
         columns: 12
         blocks:
           - id: experiment_card
-            purpose: "Repeated card per experiment. Shows: title (bold, clickable → experiment_detail), description (2 lines truncated), category badge (colored dot + name), stats row (number of prompt versions, number of results, avg rating as colored number). Bottom: created date and last updated relative time. Hover: subtle elevation. Click anywhere → experiment_detail."
+            purpose: "Repeated card per experiment. Shows: title (bold, clickable → experiment_detail), description (2 lines truncated), category badge (colored dot + name), stats row (number of prompt versions, number of results, avg rating as colored number). If the experiment already has results, the card may also show a compact mini-preview of the top result (best rating, with latest result as fallback) together with provider/model label and rating. Bottom: created date and last updated relative time. Hover: subtle elevation. Click anywhere → experiment_detail."
     title: Experiments
     purpose: Main screen. Browse experiments either as one list or grouped into category sections.
   experiment_detail:

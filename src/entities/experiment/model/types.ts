@@ -15,6 +15,14 @@ export type ExperimentListItem = {
   updatedAt: string;
   createdLabel: string;
   updatedLabel: string;
+  topResultPreview: {
+    htmlContent: string;
+    rating: number | null;
+    providerName: string;
+    providerColor: string;
+    modelName: string;
+    modelVersion: string;
+  } | null;
 };
 
 export type ExperimentFilterInput = {

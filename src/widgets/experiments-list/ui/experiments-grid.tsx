@@ -113,7 +113,7 @@ export function ExperimentsGrid({
                 </h2>
                 <span className="font-mono text-xs text-dim">{section.items.length}</span>
               </div>
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-5">
                 {section.items.map((experiment) => (
                   <ExperimentCard key={experiment.id} experiment={experiment} />
                 ))}
@@ -125,7 +125,7 @@ export function ExperimentsGrid({
   }
 
   return (
-    <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+    <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-5">
       {filteredExperiments.map((experiment) => (
         <ExperimentCard key={experiment.id} experiment={experiment} />
       ))}
