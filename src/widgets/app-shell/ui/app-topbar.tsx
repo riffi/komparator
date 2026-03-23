@@ -12,7 +12,7 @@ export function AppTopbar({ leadingAction }: AppTopbarProps) {
 
   return (
     <header className="fixed inset-x-0 top-0 z-40 border-b border-border/80 bg-[rgba(16,18,22,0.86)] backdrop-blur-xl">
-      <div className="mx-auto flex h-14 w-full max-w-[1600px] items-center justify-between gap-4 px-4 lg:px-6">
+      <div className="flex h-14 w-full items-center justify-between gap-4 px-4 lg:px-6">
         <div className="flex items-center gap-3">
           {leadingAction}
           <div className="font-mono text-[15px] font-semibold tracking-[-0.04em] text-text">
