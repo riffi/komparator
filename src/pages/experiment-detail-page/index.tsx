@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
   Code2,
   Copy,
@@ -7,15 +7,27 @@ import {
   ListFilter,
   Monitor,
   Pencil,
+  Plus,
+  Save,
   Smartphone,
   Tablet,
   Undo2,
 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
-import { WorkspaceResultItem } from "@/entities/experiment/model/types";
+import { ExperimentWorkspace, WorkspaceResultItem } from "@/entities/experiment/model/types";
 import { cn } from "@/shared/lib/cn";
 import { ratingToneClass } from "@/shared/lib/rating-color";
-import { getExperimentWorkspace } from "@/shared/db/seeds";
+import {
+  createResultEntry,
+  loadCategoryOptions,
+  loadExperimentWorkspace,
+  loadWrapperOptions,
+  SelectOption,
+  updateExperimentEntry,
+  updatePromptVersionEntry,
+  updateResultNotes,
+  updateResultRating,
+} from "@/shared/db/workspace";
 import { Button } from "@/shared/ui/button";
 
 const deviceWidths = {
@@ -27,10 +39,11 @@ const deviceWidths = {
 export function ExperimentDetailPage() {
   const navigate = useNavigate();
   const { experimentId = "" } = useParams();
-  const workspace = useMemo(() => getExperimentWorkspace(experimentId), [experimentId]);
+  const [workspace, setWorkspace] = useState<ExperimentWorkspace | null>(null);
+  const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"results" | "prompt">("results");
   const [viewMode, setViewMode] = useState<"single" | "sbs">("single");
-  const [selectedVersionId, setSelectedVersionId] = useState<string>(workspace?.promptVersions[0]?.id ?? "");
+  const [selectedVersionId, setSelectedVersionId] = useState<string>("");
   const [selectedResultId, setSelectedResultId] = useState<string>("");
   const [slotAId, setSlotAId] = useState<string>("");
   const [slotBId, setSlotBId] = useState<string>("");
@@ -38,6 +51,56 @@ export function ExperimentDetailPage() {
   const [device, setDevice] = useState<keyof typeof deviceWidths>("desktop");
   const [showCode, setShowCode] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
+  const [notesDraft, setNotesDraft] = useState("");
+  const [savingNotes, setSavingNotes] = useState(false);
+  const [savingRating, setSavingRating] = useState(false);
+  const [showAddResult, setShowAddResult] = useState(false);
+  const [savingResult, setSavingResult] = useState(false);
+  const [savingPromptSettings, setSavingPromptSettings] = useState(false);
+  const [categoryOptions, setCategoryOptions] = useState<SelectOption[]>([]);
+  const [wrapperOptions, setWrapperOptions] = useState<SelectOption[]>([]);
+  const [settingsDraft, setSettingsDraft] = useState({
+    title: "",
+    description: "",
+    status: "draft" as "draft" | "active" | "completed" | "archived",
+    categoryId: "",
+    wrapperId: "",
+    tags: "",
+    promptText: "",
+    changeNote: "",
+  });
+  const [resultForm, setResultForm] = useState({
+    providerName: "",
+    modelName: "",
+    modelVersion: "",
+    modelComment: "",
+    htmlContent: "",
+    rating: "",
+    notes: "",
+  });
+
+  const refreshWorkspace = useCallback(async () => {
+    if (!experimentId) {
+      setWorkspace(null);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    const [nextWorkspace, nextCategories, nextWrappers] = await Promise.all([
+      loadExperimentWorkspace(experimentId),
+      loadCategoryOptions(),
+      loadWrapperOptions(),
+    ]);
+    setWorkspace(nextWorkspace);
+    setCategoryOptions(nextCategories);
+    setWrapperOptions(nextWrappers);
+    setLoading(false);
+  }, [experimentId]);
+
+  useEffect(() => {
+    void refreshWorkspace();
+  }, [refreshWorkspace]);
 
   const visibleResults = useMemo(() => {
     if (!workspace || !selectedVersionId) {
@@ -57,7 +120,11 @@ export function ExperimentDetailPage() {
       return;
     }
 
-    setSelectedVersionId((current) => current || workspace.promptVersions[0].id);
+    setSelectedVersionId((current) =>
+      current && workspace.promptVersions.some((item) => item.id === current)
+        ? current
+        : workspace.promptVersions[0].id,
+    );
   }, [workspace]);
 
   useEffect(() => {
@@ -88,6 +155,44 @@ export function ExperimentDetailPage() {
   const slotB = visibleResults.find((item) => item.id === slotBId) ?? visibleResults[1] ?? visibleResults[0];
   const activePrompt =
     workspace?.promptVersions.find((item) => item.id === selectedVersionId) ?? workspace?.promptVersions[0];
+
+  useEffect(() => {
+    setNotesDraft(selectedResult?.notes ?? "");
+  }, [selectedResult?.id, selectedResult?.notes]);
+
+  useEffect(() => {
+    if (!workspace) {
+      return;
+    }
+
+    const activeVersion =
+      workspace.promptVersions.find((item) => item.id === selectedVersionId) ?? workspace.promptVersions[0];
+
+    setSettingsDraft({
+      title: workspace.title,
+      description: workspace.description,
+      status: workspace.status,
+      categoryId:
+        categoryOptions.find((item) => item.label === workspace.categoryName)?.id ??
+        categoryOptions[0]?.id ??
+        "",
+      wrapperId:
+        wrapperOptions.find((item) => item.label === workspace.wrapperName)?.id ??
+        wrapperOptions[0]?.id ??
+        "",
+      tags: workspace.tags.join(", "),
+      promptText: activeVersion?.promptText ?? "",
+      changeNote: activeVersion?.changeNote ?? "",
+    });
+  }, [workspace, selectedVersionId, categoryOptions, wrapperOptions]);
+
+  if (loading) {
+    return (
+      <section className="rounded-lg border border-border/80 bg-surface/70 p-6 shadow-panel">
+        <h1 className="font-mono text-2xl font-semibold text-text">Loading experiment...</h1>
+      </section>
+    );
+  }
 
   if (!workspace) {
     return (
@@ -125,6 +230,89 @@ export function ExperimentDetailPage() {
 
     setSlotBId(resultId);
     setLastSlot("b");
+  };
+
+  const onSaveNotes = async () => {
+    if (!selectedResult) {
+      return;
+    }
+
+    setSavingNotes(true);
+    await updateResultNotes(selectedResult.id, notesDraft);
+    await refreshWorkspace();
+    setSavingNotes(false);
+  };
+
+  const onChangeRating = async (value: string) => {
+    if (!selectedResult) {
+      return;
+    }
+
+    setSavingRating(true);
+    await updateResultRating(selectedResult.id, value ? Number(value) : null);
+    await refreshWorkspace();
+    setSavingRating(false);
+  };
+
+  const onCreateResult = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!activePrompt || !resultForm.providerName.trim() || !resultForm.modelName.trim() || !resultForm.htmlContent.trim()) {
+      return;
+    }
+
+    setSavingResult(true);
+    await createResultEntry({
+      experimentId: workspace.id,
+      promptVersionId: activePrompt.id,
+      providerName: resultForm.providerName,
+      modelName: resultForm.modelName,
+      modelVersion: resultForm.modelVersion,
+      modelComment: resultForm.modelComment,
+      htmlContent: resultForm.htmlContent,
+      rating: resultForm.rating ? Number(resultForm.rating) : null,
+      notes: resultForm.notes,
+    });
+    setSavingResult(false);
+    setShowAddResult(false);
+    setResultForm({
+      providerName: "",
+      modelName: "",
+      modelVersion: "",
+      modelComment: "",
+      htmlContent: "",
+      rating: "",
+      notes: "",
+    });
+    await refreshWorkspace();
+  };
+
+  const onSavePromptSettings = async () => {
+    if (!activePrompt) {
+      return;
+    }
+
+    setSavingPromptSettings(true);
+    await updateExperimentEntry({
+      experimentId: workspace.id,
+      title: settingsDraft.title,
+      description: settingsDraft.description,
+      status: settingsDraft.status,
+      categoryId: settingsDraft.categoryId,
+      wrapperId: settingsDraft.wrapperId,
+      tags: settingsDraft.tags
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter(Boolean),
+    });
+    await updatePromptVersionEntry({
+      promptVersionId: activePrompt.id,
+      promptText: settingsDraft.promptText,
+      changeNote: settingsDraft.changeNote,
+      experimentId: workspace.id,
+    });
+    await refreshWorkspace();
+    setSavingPromptSettings(false);
   };
 
   return (
@@ -217,7 +405,10 @@ export function ExperimentDetailPage() {
                 </option>
               ))}
             </select>
-            <Button size="sm">+ Add result</Button>
+            <Button size="sm" onClick={() => setShowAddResult(true)}>
+              <Plus className="h-4 w-4" />
+              Add result
+            </Button>
           </div>
         ) : null}
       </div>
@@ -316,6 +507,21 @@ export function ExperimentDetailPage() {
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-2">
+                {viewMode === "single" && selectedResult ? (
+                  <select
+                    className="h-9 rounded-md border border-border/80 bg-code px-3 text-sm text-text outline-none focus:border-primary"
+                    value={selectedResult.rating ?? ""}
+                    onChange={(event) => void onChangeRating(event.target.value)}
+                    disabled={savingRating}
+                  >
+                    <option value="">Unrated</option>
+                    {Array.from({ length: 10 }, (_, index) => index + 1).map((value) => (
+                      <option key={value} value={value}>
+                        Rating {value}
+                      </option>
+                    ))}
+                  </select>
+                ) : null}
                 <Button
                   variant={showCode ? "default" : "ghost"}
                   size="sm"
@@ -340,24 +546,9 @@ export function ExperimentDetailPage() {
             </div>
 
             <div className="flex items-center justify-center gap-1 border-b border-border/80 px-3 py-2">
-              <DeviceButton
-                active={device === "mobile"}
-                onClick={() => setDevice("mobile")}
-                icon={Smartphone}
-                label="375"
-              />
-              <DeviceButton
-                active={device === "tablet"}
-                onClick={() => setDevice("tablet")}
-                icon={Tablet}
-                label="768"
-              />
-              <DeviceButton
-                active={device === "desktop"}
-                onClick={() => setDevice("desktop")}
-                icon={Monitor}
-                label="Full"
-              />
+              <DeviceButton active={device === "mobile"} onClick={() => setDevice("mobile")} icon={Smartphone} label="375" />
+              <DeviceButton active={device === "tablet"} onClick={() => setDevice("tablet")} icon={Tablet} label="768" />
+              <DeviceButton active={device === "desktop"} onClick={() => setDevice("desktop")} icon={Monitor} label="Full" />
             </div>
 
             <div className="min-h-0 flex-1 overflow-auto bg-code p-4">
@@ -367,40 +558,33 @@ export function ExperimentDetailPage() {
                     {selectedResult?.htmlContent ?? "No result selected."}
                   </pre>
                 ) : (
-                  <div
-                    className="mx-auto h-[520px] max-w-full overflow-hidden rounded-lg border border-border/80 bg-white"
-                    style={{ width: deviceWidths[device] }}
-                  >
+                  <div className="mx-auto h-[520px] max-w-full overflow-hidden rounded-lg border border-border/80 bg-white" style={{ width: deviceWidths[device] }}>
                     {selectedResult ? (
-                      <iframe
-                        title={selectedResult.id}
-                        srcDoc={selectedResult.htmlContent}
-                        className="h-full w-full border-0"
-                        sandbox="allow-scripts"
-                      />
+                      <iframe title={selectedResult.id} srcDoc={selectedResult.htmlContent} className="h-full w-full border-0" sandbox="allow-scripts" />
                     ) : null}
                   </div>
                 )
               ) : (
                 <div className="grid h-[520px] gap-4 xl:grid-cols-2">
                   <ComparePanel label="A" result={slotA} device={device} showCode={showCode} />
-                  <ComparePanel
-                    label="B"
-                    result={slotB}
-                    device={device}
-                    showCode={showCode}
-                    accent="orange"
-                  />
+                  <ComparePanel label="B" result={slotB} device={device} showCode={showCode} accent="orange" />
                 </div>
               )}
             </div>
 
             {showNotes ? (
               <div className="border-t border-border/80 p-4">
-                <div className="mb-2 font-mono text-xs uppercase tracking-[0.12em] text-dim">Notes</div>
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <div className="font-mono text-xs uppercase tracking-[0.12em] text-dim">Notes</div>
+                  <Button size="sm" onClick={() => void onSaveNotes()} disabled={savingNotes || notesDraft === (selectedResult?.notes ?? "") || !selectedResult}>
+                    <Save className="h-4 w-4" />
+                    Save notes
+                  </Button>
+                </div>
                 <textarea
                   className="min-h-[110px] w-full rounded-lg border border-border/80 bg-code px-3 py-2 text-sm text-text outline-none focus:border-primary"
-                  defaultValue={selectedResult?.notes}
+                  value={notesDraft}
+                  onChange={(event) => setNotesDraft(event.target.value)}
                 />
               </div>
             ) : null}
@@ -425,73 +609,257 @@ export function ExperimentDetailPage() {
                   v{version.versionNumber}
                 </button>
               ))}
-              <button
-                type="button"
-                className="rounded-full border border-dashed border-border/80 px-3 py-1.5 font-mono text-xs text-dim transition hover:text-text"
-              >
-                + New version
-              </button>
+              <button type="button" className="rounded-full border border-dashed border-border/80 px-3 py-1.5 font-mono text-xs text-dim transition hover:text-text">+ New version</button>
             </div>
 
             <div className="rounded-lg border border-border/80 bg-code p-4">
-              <div className="mb-2 font-mono text-xs uppercase tracking-[0.12em] text-dim">
-                Prompt text
-              </div>
+              <div className="mb-2 font-mono text-xs uppercase tracking-[0.12em] text-dim">Prompt text</div>
               <textarea
                 className="min-h-[260px] w-full resize-y bg-transparent font-mono text-sm leading-6 text-text outline-none"
-                defaultValue={activePrompt?.promptText}
+                value={settingsDraft.promptText}
+                onChange={(event) =>
+                  setSettingsDraft((current) => ({ ...current, promptText: event.target.value }))
+                }
               />
             </div>
 
-            <div className="text-sm italic text-muted">{activePrompt?.changeNote}</div>
+            <div className="space-y-2">
+              <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
+                Change note
+              </div>
+              <InputLike
+                value={settingsDraft.changeNote}
+                onChange={(value) =>
+                  setSettingsDraft((current) => ({ ...current, changeNote: value }))
+                }
+                placeholder="What changed from the previous version"
+              />
+            </div>
+
+            <div className="flex justify-end">
+              <Button onClick={() => void onSavePromptSettings()} disabled={savingPromptSettings}>
+                <Save className="h-4 w-4" />
+                Save changes
+              </Button>
+            </div>
           </section>
 
           <aside className="space-y-4">
             <div className="rounded-lg border border-border/80 bg-raised p-4">
-              <div className="font-mono text-xs uppercase tracking-[0.12em] text-dim">
-                Experiment settings
-              </div>
+              <div className="font-mono text-xs uppercase tracking-[0.12em] text-dim">Experiment settings</div>
               <div className="mt-4 space-y-4">
-                <Field label="Description" value={workspace.description} multiline />
-                <Field label="Wrapper" value={workspace.wrapperName} />
-                <Field label="Category" value={workspace.categoryName} />
-                <Field label="Tags" value={workspace.tags.join(", ")} />
-                <Field label="Status" value={workspace.status} />
+                <Field
+                  label="Title"
+                  value={settingsDraft.title}
+                  onChange={(value) =>
+                    setSettingsDraft((current) => ({ ...current, title: value }))
+                  }
+                />
+                <Field
+                  label="Description"
+                  value={settingsDraft.description}
+                  onChange={(value) =>
+                    setSettingsDraft((current) => ({ ...current, description: value }))
+                  }
+                  multiline
+                />
+                <SelectField
+                  label="Wrapper"
+                  value={settingsDraft.wrapperId}
+                  options={wrapperOptions}
+                  onChange={(value) =>
+                    setSettingsDraft((current) => ({ ...current, wrapperId: value }))
+                  }
+                />
+                <SelectField
+                  label="Category"
+                  value={settingsDraft.categoryId}
+                  options={categoryOptions}
+                  onChange={(value) =>
+                    setSettingsDraft((current) => ({ ...current, categoryId: value }))
+                  }
+                />
+                <Field
+                  label="Tags"
+                  value={settingsDraft.tags}
+                  onChange={(value) =>
+                    setSettingsDraft((current) => ({ ...current, tags: value }))
+                  }
+                />
+                <SelectField
+                  label="Status"
+                  value={settingsDraft.status}
+                  options={[
+                    { id: "draft", label: "Draft" },
+                    { id: "active", label: "Active" },
+                    { id: "completed", label: "Completed" },
+                    { id: "archived", label: "Archived" },
+                  ]}
+                  onChange={(value) =>
+                    setSettingsDraft((current) => ({
+                      ...current,
+                      status: value as "draft" | "active" | "completed" | "archived",
+                    }))
+                  }
+                />
                 <div>
-                  <div className="mb-1 font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
-                    Wrapper preview
-                  </div>
-                  <pre className="max-h-[220px] overflow-auto whitespace-pre-wrap rounded-lg border border-border/80 bg-code p-3 font-mono text-xs leading-5 text-muted">
-                    {workspace.wrapperTemplate.replace("{{prompt}}", activePrompt?.promptText ?? "")}
-                  </pre>
+                  <div className="mb-1 font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Wrapper preview</div>
+                  <pre className="max-h-[220px] overflow-auto whitespace-pre-wrap rounded-lg border border-border/80 bg-code p-3 font-mono text-xs leading-5 text-muted">{(workspace.wrapperTemplate || "").replace("{{prompt}}", settingsDraft.promptText ?? "")}</pre>
                 </div>
               </div>
             </div>
           </aside>
         </div>
       )}
+
+      {showAddResult ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <form
+            className="w-full max-w-3xl rounded-xl border border-border/80 bg-raised p-5 shadow-panel"
+            onSubmit={onCreateResult}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="font-mono text-xl font-semibold text-text">Add result</h2>
+                <p className="mt-1 text-sm text-muted">
+                  Attach HTML output to prompt version v{activePrompt?.versionNumber ?? "-"}.
+                </p>
+              </div>
+              <Button type="button" variant="ghost" size="sm" onClick={() => setShowAddResult(false)}>
+                Cancel
+              </Button>
+            </div>
+
+            <div className="mt-5 grid gap-4 md:grid-cols-2">
+              <label className="space-y-2">
+                <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
+                  Provider
+                </span>
+                <InputLike
+                  value={resultForm.providerName}
+                  onChange={(value) => setResultForm((current) => ({ ...current, providerName: value }))}
+                  placeholder="OpenAI"
+                />
+              </label>
+
+              <label className="space-y-2">
+                <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
+                  Model
+                </span>
+                <InputLike
+                  value={resultForm.modelName}
+                  onChange={(value) => setResultForm((current) => ({ ...current, modelName: value }))}
+                  placeholder="GPT"
+                />
+              </label>
+
+              <label className="space-y-2">
+                <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
+                  Model version
+                </span>
+                <InputLike
+                  value={resultForm.modelVersion}
+                  onChange={(value) => setResultForm((current) => ({ ...current, modelVersion: value }))}
+                  placeholder="4o"
+                />
+              </label>
+
+              <label className="space-y-2">
+                <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
+                  Comment
+                </span>
+                <InputLike
+                  value={resultForm.modelComment}
+                  onChange={(value) => setResultForm((current) => ({ ...current, modelComment: value }))}
+                  placeholder="thinking high"
+                />
+              </label>
+
+              <label className="space-y-2">
+                <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
+                  Rating
+                </span>
+                <select
+                  className="h-10 w-full rounded-md border border-border/80 bg-code px-3 text-sm text-text outline-none transition focus:border-primary"
+                  value={resultForm.rating}
+                  onChange={(event) =>
+                    setResultForm((current) => ({ ...current, rating: event.target.value }))
+                  }
+                >
+                  <option value="">Unrated</option>
+                  {Array.from({ length: 10 }, (_, index) => index + 1).map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="space-y-2">
+                <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
+                  Notes
+                </span>
+                <InputLike
+                  value={resultForm.notes}
+                  onChange={(value) => setResultForm((current) => ({ ...current, notes: value }))}
+                  placeholder="Strong visual hierarchy"
+                />
+              </label>
+
+              <label className="space-y-2 md:col-span-2">
+                <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
+                  HTML output
+                </span>
+                <textarea
+                  className="min-h-[260px] w-full rounded-md border border-border/80 bg-code px-3 py-2 font-mono text-sm text-text outline-none transition focus:border-primary"
+                  value={resultForm.htmlContent}
+                  onChange={(event) =>
+                    setResultForm((current) => ({ ...current, htmlContent: event.target.value }))
+                  }
+                  required
+                />
+              </label>
+            </div>
+
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <Button type="button" variant="ghost" onClick={() => setShowAddResult(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={savingResult}>
+                Save result
+              </Button>
+            </div>
+          </form>
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function DeviceButton({
-  active,
-  onClick,
-  icon: Icon,
-  label,
+function InputLike({
+  value,
+  onChange,
+  placeholder,
 }: {
-  active: boolean;
-  onClick: () => void;
-  icon: typeof Smartphone;
-  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
 }) {
+  return (
+    <input
+      className="h-10 w-full rounded-md border border-border/80 bg-code px-3 text-sm text-text outline-none transition focus:border-primary"
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      placeholder={placeholder}
+    />
+  );
+}
+
+function DeviceButton({ active, onClick, icon: Icon, label }: { active: boolean; onClick: () => void; icon: typeof Smartphone; label: string }) {
   return (
     <button
       type="button"
-      className={cn(
-        "inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-xs text-muted transition hover:text-text",
-        active && "bg-surface text-text",
-      )}
+      className={cn("inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-xs text-muted transition hover:text-text", active && "bg-surface text-text")}
       onClick={onClick}
     >
       <Icon className="h-3.5 w-3.5" />
@@ -500,67 +868,25 @@ function DeviceButton({
   );
 }
 
-function ComparePanel({
-  label,
-  result,
-  device,
-  showCode,
-  accent = "blue",
-}: {
-  label: "A" | "B";
-  result?: WorkspaceResultItem;
-  device: keyof typeof deviceWidths;
-  showCode: boolean;
-  accent?: "blue" | "orange";
-}) {
+function ComparePanel({ label, result, device, showCode, accent = "blue" }: { label: "A" | "B"; result?: WorkspaceResultItem; device: keyof typeof deviceWidths; showCode: boolean; accent?: "blue" | "orange" }) {
   if (!result) {
-    return (
-      <div className="flex items-center justify-center rounded-lg border border-dashed border-border/80 bg-[#050608] font-mono text-sm text-dim">
-        Select a result
-      </div>
-    );
+    return <div className="flex items-center justify-center rounded-lg border border-dashed border-border/80 bg-[#050608] font-mono text-sm text-dim">Select a result</div>;
   }
 
   return (
     <div className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-border/80 bg-[#050608]">
       <div className="flex items-center gap-2 border-b border-border/80 px-3 py-2">
-        <span
-          className={cn(
-            "rounded px-1.5 py-0.5 font-mono text-[10px]",
-            accent === "blue" ? "bg-primary-soft/60 text-primary" : "bg-orange-500/10 text-orange-300",
-          )}
-        >
-          {label}
-        </span>
+        <span className={cn("rounded px-1.5 py-0.5 font-mono text-[10px]", accent === "blue" ? "bg-primary-soft/60 text-primary" : "bg-orange-500/10 text-orange-300")}>{label}</span>
         <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: result.providerColor }} />
-        <div className="truncate text-sm font-semibold text-text">
-          {result.providerName} / {result.modelName} {result.modelVersion}
-        </div>
-        <div
-          className={cn(
-            "ml-auto font-mono text-sm",
-            result.rating ? ratingToneClass(result.rating) : "text-dim",
-          )}
-        >
-          {result.rating ?? "—"}
-        </div>
+        <div className="truncate text-sm font-semibold text-text">{result.providerName} / {result.modelName} {result.modelVersion}</div>
+        <div className={cn("ml-auto font-mono text-sm", result.rating ? ratingToneClass(result.rating) : "text-dim")}>{result.rating ?? "—"}</div>
       </div>
       <div className="min-h-0 flex-1 overflow-auto p-3">
         {showCode ? (
-          <pre className="overflow-auto whitespace-pre-wrap font-mono text-xs leading-6 text-muted">
-            {result.htmlContent}
-          </pre>
+          <pre className="overflow-auto whitespace-pre-wrap font-mono text-xs leading-6 text-muted">{result.htmlContent}</pre>
         ) : (
-          <div
-            className="mx-auto h-full min-h-[420px] max-w-full overflow-hidden rounded-lg border border-border/80 bg-white"
-            style={{ width: deviceWidths[device] }}
-          >
-            <iframe
-              title={result.id}
-              srcDoc={result.htmlContent}
-              className="h-full w-full border-0"
-              sandbox="allow-scripts"
-            />
+          <div className="mx-auto h-full min-h-[420px] max-w-full overflow-hidden rounded-lg border border-border/80 bg-white" style={{ width: deviceWidths[device] }}>
+            <iframe title={result.id} srcDoc={result.htmlContent} className="h-full w-full border-0" sandbox="allow-scripts" />
           </div>
         )}
       </div>
@@ -571,10 +897,12 @@ function ComparePanel({
 function Field({
   label,
   value,
+  onChange,
   multiline = false,
 }: {
   label: string;
   value: string;
+  onChange?: (value: string) => void;
   multiline?: boolean;
 }) {
   return (
@@ -583,14 +911,45 @@ function Field({
       {multiline ? (
         <textarea
           className="min-h-[100px] w-full rounded-lg border border-border/80 bg-code px-3 py-2 text-sm text-text outline-none focus:border-primary"
-          defaultValue={value}
+          value={value}
+          onChange={(event) => onChange?.(event.target.value)}
         />
       ) : (
         <input
           className="h-10 w-full rounded-lg border border-border/80 bg-code px-3 text-sm text-text outline-none focus:border-primary"
-          defaultValue={value}
+          value={value}
+          onChange={(event) => onChange?.(event.target.value)}
         />
       )}
+    </div>
+  );
+}
+
+function SelectField({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: SelectOption[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div>
+      <div className="mb-1 font-mono text-[11px] uppercase tracking-[0.12em] text-dim">{label}</div>
+      <select
+        className="h-10 w-full rounded-lg border border-border/80 bg-code px-3 text-sm text-text outline-none focus:border-primary"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        {options.map((option) => (
+          <option key={option.id} value={option.id}>
+            {option.label}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }

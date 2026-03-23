@@ -1,5 +1,6 @@
+import { useEffect, useState } from "react";
 import { filterStore } from "@/features/experiment-filters/model/use-experiment-filters";
-import { seedCategories } from "@/shared/db/seeds";
+import { loadSidebarCategories, SidebarCategoryItem } from "@/shared/db/workspace";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { cn } from "@/shared/lib/cn";
@@ -21,6 +22,24 @@ export function ExperimentsFilters() {
   const setTagQuery = filterStore((state) => state.setTagQuery);
   const setSort = filterStore((state) => state.setSort);
   const reset = filterStore((state) => state.reset);
+  const [categories, setCategories] = useState<SidebarCategoryItem[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const run = async () => {
+      const nextCategories = await loadSidebarCategories();
+      if (!cancelled) {
+        setCategories(nextCategories);
+      }
+    };
+
+    void run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <section className="rounded-lg border border-border/80 bg-surface/60 p-4 shadow-panel">
@@ -52,7 +71,7 @@ export function ExperimentsFilters() {
           value={selectedCategory}
           onChange={(event) => setCategory(event.target.value)}
         >
-          {seedCategories.map((category) => (
+          {categories.map((category) => (
             <option key={category.id} value={category.id}>
               {category.name}
             </option>

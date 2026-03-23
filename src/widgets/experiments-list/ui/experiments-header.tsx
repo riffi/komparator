@@ -1,10 +1,15 @@
 import { Plus, Search } from "lucide-react";
-import { seedExperiments } from "@/shared/db/seeds";
 import { filterStore } from "@/features/experiment-filters/model/use-experiment-filters";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 
-export function ExperimentsHeader() {
+export function ExperimentsHeader({
+  count,
+  onCreate,
+}: {
+  count: number;
+  onCreate: () => void;
+}) {
   const query = filterStore((state) => state.query);
   const setQuery = filterStore((state) => state.setQuery);
 
@@ -13,7 +18,7 @@ export function ExperimentsHeader() {
       <div className="min-w-0 flex-1">
         <h1 className="font-mono text-[24px] font-semibold tracking-[-0.05em] text-text">
           Experiments
-          <span className="ml-2 text-base font-normal text-dim">{seedExperiments.length}</span>
+          <span className="ml-2 text-base font-normal text-dim">{count}</span>
         </h1>
       </div>
       <div className="relative min-w-[240px] max-w-[420px] flex-1">
@@ -25,7 +30,7 @@ export function ExperimentsHeader() {
           placeholder="Search by title, tags, description..."
         />
       </div>
-      <Button>
+      <Button onClick={onCreate}>
         <Plus className="h-4 w-4" />
         New experiment
       </Button>
