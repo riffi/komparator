@@ -15,6 +15,7 @@ import {
   Plus,
   Save,
   Smartphone,
+  Star,
   Tablet,
   Trash2,
   Undo2,
@@ -971,21 +972,12 @@ export function ExperimentDetailPage() {
                             {selectedResult?.providerName ?? ""} / {selectedResult?.modelName ?? ""}{" "}
                             {selectedResult?.modelVersion ?? ""}
                           </div>
-                          <Select
-                            className="h-7 rounded-full border-border/80 px-2.5 py-0 font-mono text-[11px]"
-                            wrapperClassName="w-[102px]"
-                            value={selectedResult?.rating ?? ""}
-                            onChange={(event) => void onChangeRating(event.target.value)}
-                            disabled={savingRating || !selectedResult}
-                          >
-                            <option value="">Unrated</option>
-                            {Array.from({ length: 10 }, (_, index) => index + 1).map((value) => (
-                              <option key={value} value={value}>
-                                {value}
-                              </option>
-                            ))}
-                          </Select>
                         </div>
+                        <RatingStars
+                          value={selectedResult?.rating ?? null}
+                          disabled={savingRating || !selectedResult}
+                          onChange={(value) => void onChangeRating(value ? String(value) : "")}
+                        />
                         <div className="mt-1 text-xs text-muted">
                           {selectedResult?.modelComment || "No comment"} • {selectedResult?.fileSizeBytes ?? 0} bytes •{" "}
                           {selectedResult?.lineCount ?? 0} lines
@@ -1767,6 +1759,13 @@ export function ExperimentDetailPage() {
                       {selectedResult?.modelComment || "No comment"} • {selectedResult?.fileSizeBytes ?? 0} bytes •{" "}
                       {selectedResult?.lineCount ?? 0} lines
                     </div>
+                    <div className="mt-3">
+                      <RatingStars
+                        value={selectedResult?.rating ?? null}
+                        disabled={savingRating || !selectedResult}
+                        onChange={(value) => void onChangeRating(value ? String(value) : "")}
+                      />
+                    </div>
                   </>
                 ) : (
                   <>
@@ -2047,6 +2046,66 @@ function PreviewLoadingState({
           {loading ? "Preparing rendered HTML" : "Select another result"}
         </div>
       </div>
+    </div>
+  );
+}
+
+function RatingStars({
+  value,
+  onChange,
+  disabled = false,
+}: {
+  value: number | null;
+  onChange: (value: number | null) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <div className="flex items-center gap-1 rounded-full border border-border/80 bg-code/80 px-2 py-1">
+        {Array.from({ length: 10 }, (_, index) => {
+          const starValue = index + 1;
+          const active = (value ?? 0) >= starValue;
+
+          return (
+            <button
+              key={starValue}
+              type="button"
+              className={cn(
+                "inline-flex h-6 w-6 items-center justify-center rounded-full transition",
+                disabled ? "cursor-not-allowed opacity-60" : "hover:bg-white/5",
+              )}
+              onClick={() => {
+                if (!disabled) {
+                  onChange(value === starValue ? null : starValue);
+                }
+              }}
+              disabled={disabled}
+              aria-label={`Set rating to ${starValue}`}
+              title={`Rate ${starValue}/10`}
+            >
+              <Star
+                className={cn(
+                  "h-3.5 w-3.5",
+                  active ? "fill-amber-300 text-amber-300" : "text-dim",
+                )}
+              />
+            </button>
+          );
+        })}
+      </div>
+      <div className={cn("min-w-[58px] font-mono text-xs", value ? ratingToneClass(value) : "text-dim")}>
+        {value ? `${value}/10` : "Unrated"}
+      </div>
+      {value ? (
+        <button
+          type="button"
+          className="text-xs text-muted transition hover:text-text disabled:cursor-not-allowed disabled:opacity-60"
+          onClick={() => onChange(null)}
+          disabled={disabled}
+        >
+          Clear
+        </button>
+      ) : null}
     </div>
   );
 }
