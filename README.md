@@ -6,6 +6,8 @@
 
 It helps you collect outputs, review them visually, compare them side by side, and rate which model did better.
 
+🌍 Try it here: https://llm-komparator.vercel.app/
+
 ## What You Can Do
 
 - 🧪 Create experiments for a specific task or prompt
