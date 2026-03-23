@@ -1048,7 +1048,14 @@ export function ExperimentDetailPage() {
                 </div>
 
                 <div className="min-h-0 flex-1 overflow-auto bg-code p-4">
-                  {viewMode === "single" ? (
+                  {showFullscreen ? (
+                    <div className="flex h-full min-h-[520px] items-center justify-center rounded-lg border border-dashed border-border/80 bg-surface/40">
+                      <div className="text-center">
+                        <div className="font-mono text-[11px] uppercase tracking-[0.14em] text-dim">Fullscreen active</div>
+                        <div className="mt-2 text-sm text-muted">Live preview is rendered only in the fullscreen overlay.</div>
+                      </div>
+                    </div>
+                  ) : viewMode === "single" ? (
                     <SinglePreviewCanvas
                       result={selectedResult}
                       htmlContent={selectedResultHtml}
@@ -1891,7 +1898,7 @@ function SinglePreviewCanvas({
   return (
     <div
       className={cn(
-        "mx-auto max-w-full overflow-hidden rounded-lg border border-border/80 bg-white",
+        "mx-auto max-w-full overflow-hidden rounded-lg border border-border/80 bg-[#f3f4f6]",
         fullscreen ? "h-full min-h-[640px]" : "h-full min-h-[520px]",
       )}
       style={{ width: deviceWidths[device] }}
@@ -1899,9 +1906,7 @@ function SinglePreviewCanvas({
       {result && htmlContent ? (
         <iframe title={result.id} srcDoc={htmlContent} className="h-full w-full border-0" sandbox="allow-scripts" />
       ) : result ? (
-        <div className="flex h-full items-center justify-center font-mono text-sm text-slate-500">
-          {loading ? "Loading preview..." : "Preview unavailable"}
-        </div>
+        <PreviewLoadingState loading={loading} />
       ) : null}
     </div>
   );
@@ -2010,16 +2015,37 @@ function ComparePanel({ label, result, htmlContent, loading, device, showCode, a
         {showCode ? (
           <HtmlCodeBlock code={htmlContent ?? (loading ? "Loading result HTML..." : "Preview unavailable")} className="border-0 bg-transparent p-0" />
         ) : (
-          <div className="mx-auto h-full min-h-[420px] max-w-full overflow-hidden rounded-lg border border-border/80 bg-white" style={{ width: deviceWidths[device] }}>
+          <div className="mx-auto h-full min-h-[420px] max-w-full overflow-hidden rounded-lg border border-border/80 bg-[#f3f4f6]" style={{ width: deviceWidths[device] }}>
             {htmlContent ? (
               <iframe title={result.id} srcDoc={htmlContent} className="h-full w-full border-0" sandbox="allow-scripts" />
             ) : (
-              <div className="flex h-full items-center justify-center font-mono text-sm text-slate-500">
-                {loading ? "Loading preview..." : "Preview unavailable"}
-              </div>
+              <PreviewLoadingState loading={loading} compact />
             )}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function PreviewLoadingState({
+  loading,
+  compact = false,
+}: {
+  loading: boolean;
+  compact?: boolean;
+}) {
+  return (
+    <div className="relative flex h-full items-center justify-center overflow-hidden bg-[radial-gradient(circle_at_top,rgba(148,163,184,0.18),transparent_42%),linear-gradient(180deg,#f8fafc_0%,#e5e7eb_100%)]">
+      <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.45),transparent)] animate-[pulse_1.8s_ease-in-out_infinite]" />
+      <div className="relative text-center">
+        <div className="mx-auto h-9 w-9 rounded-full border-2 border-slate-300 border-t-slate-500 animate-spin" />
+        <div className={cn("mt-3 font-mono uppercase tracking-[0.14em] text-slate-500", compact ? "text-[10px]" : "text-[11px]")}>
+          {loading ? "Loading preview" : "Preview unavailable"}
+        </div>
+        <div className={cn("mt-2 text-slate-400", compact ? "text-[11px]" : "text-xs")}>
+          {loading ? "Preparing rendered HTML" : "Select another result"}
+        </div>
       </div>
     </div>
   );
