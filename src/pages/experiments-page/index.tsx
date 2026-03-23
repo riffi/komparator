@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { Pencil, Plus, Trash2, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { ExperimentListItem } from "@/entities/experiment/model/types";
+import { filterStore } from "@/features/experiment-filters/model/use-experiment-filters";
 import { ExperimentsHeader } from "@/widgets/experiments-list/ui/experiments-header";
 import { ExperimentsGrid } from "@/widgets/experiments-list/ui/experiments-grid";
 import {
@@ -11,7 +12,7 @@ import {
   createExperimentWithInitialPrompt,
   deleteCategoryEntry,
   loadCategoryOptions,
-  loadExperimentsList,
+  loadExperimentsPage,
   loadManageCategories,
   loadWrapperOptions,
   updateCategoryEntry,
@@ -29,12 +30,18 @@ type ExperimentCreateForm = {
   changeNote: string;
 };
 
+const EXPERIMENTS_PAGE_SIZE = 20;
+
 export function ExperimentsPage() {
   const navigate = useNavigate();
+  const query = filterStore((state) => state.query);
+  const sort = filterStore((state) => state.sort);
   const [experiments, setExperiments] = useState<ExperimentListItem[]>([]);
+  const [totalExperiments, setTotalExperiments] = useState(0);
   const [categoryOptions, setCategoryOptions] = useState<SelectOption[]>([]);
   const [wrapperOptions, setWrapperOptions] = useState<SelectOption[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [showCategories, setShowCategories] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -55,21 +62,40 @@ export function ExperimentsPage() {
     changeNote: "",
   });
 
-  const refresh = async (cancelledRef?: { current: boolean }) => {
-    setLoading(true);
-    const [nextExperiments, nextCategories, nextWrappers] = await Promise.all([
-      loadExperimentsList(),
+  const refreshAuxiliaryData = async (cancelledRef?: { current: boolean }) => {
+    const [nextCategories, nextWrappers, nextManageCategories] = await Promise.all([
       loadCategoryOptions(),
       loadWrapperOptions(),
+      loadManageCategories(),
     ]);
-    const nextManageCategories = await loadManageCategories();
 
     if (!cancelledRef?.current) {
-      setExperiments(nextExperiments);
       setCategoryOptions(nextCategories);
       setWrapperOptions(nextWrappers);
       setCategories(nextManageCategories);
+    }
+  };
+
+  const refreshPage = async (cancelledRef?: { current: boolean }, append = false) => {
+    if (append) {
+      setLoadingMore(true);
+    } else {
+      setLoading(true);
+    }
+
+    const offset = append ? experiments.length : 0;
+    const { items, total } = await loadExperimentsPage({
+      offset,
+      limit: EXPERIMENTS_PAGE_SIZE,
+      query,
+      sort,
+    });
+
+    if (!cancelledRef?.current) {
+      setExperiments((current) => (append ? [...current, ...items] : items));
+      setTotalExperiments(total);
       setLoading(false);
+      setLoadingMore(false);
     }
   };
 
@@ -77,7 +103,7 @@ export function ExperimentsPage() {
     const cancelledRef = { current: false };
 
     const run = async () => {
-      await refresh(cancelledRef);
+      await refreshAuxiliaryData(cancelledRef);
     };
 
     void run();
@@ -86,6 +112,20 @@ export function ExperimentsPage() {
       cancelledRef.current = true;
     };
   }, []);
+
+  useEffect(() => {
+    const cancelledRef = { current: false };
+
+    const run = async () => {
+      await refreshPage(cancelledRef);
+    };
+
+    void run();
+
+    return () => {
+      cancelledRef.current = true;
+    };
+  }, [query, sort]);
 
   const onCreateExperiment = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -114,7 +154,7 @@ export function ExperimentsPage() {
       promptText: "",
       changeNote: "",
     });
-    await refresh();
+    await Promise.all([refreshPage(undefined, false), refreshAuxiliaryData()]);
     navigate(`/experiments/${experimentId}`);
   };
 
@@ -139,7 +179,7 @@ export function ExperimentsPage() {
 
     setCategoryForm({ name: "", description: "", color: "#5b8def" });
     setEditingCategoryId("");
-    await refresh();
+    await Promise.all([refreshPage(undefined, false), refreshAuxiliaryData()]);
   };
 
   const onEditCategory = (category: CategoryManagerItem) => {
@@ -159,20 +199,29 @@ export function ExperimentsPage() {
         setEditingCategoryId("");
         setCategoryForm({ name: "", description: "", color: "#5b8def" });
       }
-      await refresh();
+      await Promise.all([refreshPage(undefined, false), refreshAuxiliaryData()]);
     } catch (error) {
       setCategoryError(error instanceof Error ? error.message : "Unable to delete category.");
     }
   };
 
+  const hasMore = experiments.length < totalExperiments;
+
   return (
     <div className="space-y-6">
       <ExperimentsHeader
-        count={experiments.length}
+        count={totalExperiments}
         onCreate={() => setShowCreate(true)}
         onManageCategories={() => setShowCategories(true)}
       />
       <ExperimentsGrid experiments={experiments} loading={loading} onCreate={() => setShowCreate(true)} />
+      {!loading && experiments.length > 0 && hasMore ? (
+        <div className="flex justify-center">
+          <Button variant="ghost" onClick={() => void refreshPage(undefined, true)} disabled={loadingMore}>
+            {loadingMore ? "Loading..." : `Load more (${experiments.length}/${totalExperiments})`}
+          </Button>
+        </div>
+      ) : null}
 
       {showCreate ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">

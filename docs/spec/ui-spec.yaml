@@ -73,19 +73,19 @@ screens:
   experiments_list:
     blocks:
       - id: list_header
-        purpose: "Compact toolbar row: page title 'Experiments' with count, view mode segmented control (All | By category), title-only search input, sort dropdown, 'Categories' button for inline category management, and 'New experiment' primary button. The new-experiment action opens a lightweight create-only modal; there is no separate edit-experiment screen because experiment and prompt changes are handled inside 'Prompt & settings' on experiment_detail."
+        purpose: "Compact toolbar row: page title 'Experiments' with count of matching items, view mode segmented control (All | By category), title-only search input, sort dropdown, 'Categories' button for inline category management, and 'New experiment' primary button. The new-experiment action opens a lightweight create-only modal; there is no separate edit-experiment screen because experiment and prompt changes are handled inside 'Prompt & settings' on experiment_detail."
         columns: 12
       - id: categories_manager
         purpose: "Modal opened from the toolbar on the experiments page. Lists categories with color, description and experiment count. Supports create, rename, recolor and delete. Delete is disabled when the category is still used by experiments."
         columns: 12
       - id: experiments_grid
-        purpose: "Content area with two modes. 'All' mode shows one responsive grid of experiment cards. 'By category' mode shows category sections with colored headers and per-category responsive grids. If there are no experiments yet, the content area switches to a dedicated onboarding empty state with a short explanation of what experiments are, how the workflow works, and a primary action to create the first experiment."
+        purpose: "Content area with two modes. 'All' mode shows one responsive grid of experiment cards. 'By category' mode shows category sections with colored headers and per-category responsive grids. Results are loaded incrementally in pages and a bottom 'Load more' control appends the next batch. Search and sort reset the list to the first page. If there are no experiments yet, the content area switches to a dedicated onboarding empty state with a short explanation of what experiments are, how the workflow works, and a primary action to create the first experiment. If a search returns no matches, the grid shows a compact empty-search state instead."
         columns: 12
         blocks:
           - id: experiment_card
-            purpose: "Repeated card per experiment. Shows: title (bold, clickable → experiment_detail), description (2 lines truncated), category badge (colored dot + name), stats row (number of prompt versions, number of results, avg rating as colored number). If the experiment already has results, the card may also show a compact mini-preview of the top result (best rating, with latest result as fallback) together with provider/model label and rating. Bottom: created date and last updated relative time. Hover: subtle elevation. Click anywhere → experiment_detail."
+            purpose: "Repeated card per experiment. Shows: title (bold, clickable → experiment_detail), description (2 lines truncated), category badge (colored dot + name), stats row (number of prompt versions, number of results, avg rating as colored number). If the experiment already has results, the card may also show a compact mini-preview of the top result (best rating, with latest result as fallback) together with provider/model label and rating. The card preview is lazy: list data contains only preview metadata, while the actual HTML is fetched and the iframe is mounted only when the card approaches the viewport; before that a lightweight placeholder is shown. Bottom: created date and last updated relative time. Hover: subtle elevation. Click anywhere → experiment_detail."
     title: Experiments
-    purpose: Main screen. Browse experiments either as one list or grouped into category sections.
+    purpose: Main screen. Browse experiments either as one list or grouped into category sections, with incremental pagination and lazy card previews to keep the landing page responsive for large local datasets.
   experiment_detail:
     blocks:
       - id: experiment_topbar
@@ -190,30 +190,30 @@ screens:
   stats_dashboard:
     blocks:
       - id: stats_summary
-        purpose: "Top row of metric cards: total experiments, total results, total models used, average rating across all results. Each card shows number + trend indicator."
+        purpose: "Top row of metric cards: total experiments, total results, total models used, average rating across all results. This block should open quickly from local precomputed aggregates instead of recalculating the full workspace on every visit."
         columns: 12
       - id: model_leaderboard
-        purpose: "Leaderboard table: models ranked by average rating. Columns: rank, provider color dot + model name + version, avg rating (colored), number of results rated, win rate (% of times this model had highest rating in an experiment). Sortable."
+        purpose: "Leaderboard table: models ranked by average rating. Columns: rank, provider color dot + model name + version, avg rating (colored), number of results rated, win rate (% of times this model had highest rating in an experiment). Backed by local aggregate metrics so it does not require a full raw-results scan on every load."
         columns:
           default: 6
           mobile: 12
       - id: provider_breakdown
-        purpose: "Bar chart or horizontal stacked bars: rating distribution per provider. X-axis: providers. Y-axis: average rating. Color-coded by provider palette. Shows how many results each provider has."
+        purpose: "Bar chart or horizontal stacked bars: rating distribution per provider. X-axis: providers. Y-axis: average rating. Color-coded by provider palette. Shows how many results each provider has. Uses local aggregate metrics for fast initial render."
         columns:
           default: 6
           mobile: 12
       - id: category_stats
-        purpose: "Table: categories with avg rating per model. Rows: categories. Columns: each active model. Cells: avg rating (colored). Shows which model excels in which category of tasks."
+        purpose: "Table: categories with avg rating per model. Rows: categories. Columns: each active model. Cells: avg rating (colored). Shows which model excels in which category of tasks. This block may be computed separately from raw rated results after the fast aggregate-backed summary loads."
         columns:
           default: 6
           mobile: 12
       - id: rating_history
-        purpose: "Line chart: average rating over time per model. X-axis: date (experiments created_at). Y-axis: rating 1-10. One line per model (colored by provider). Shows trends — which models are improving/degrading over time."
+        purpose: "Line chart: average rating over time per model. X-axis: date (result created_at by day). Y-axis: rating 1-10. One line per model (colored by provider). Shows trends — which models are improving/degrading over time. This block may be computed separately from raw rated results after the fast aggregate-backed summary loads."
         columns:
           default: 6
           mobile: 12
     title: Stats
-    purpose: Aggregated statistics across all experiments, models, and ratings.
+    purpose: Aggregated statistics across all experiments, models, and ratings. The screen uses a hybrid loading model: top-level summary, leaderboard, and provider breakdown come from local precomputed aggregates, while category matrix and rating history may still be derived from raw rated results.
   settings_page:
     blocks:
       - id: backup_export

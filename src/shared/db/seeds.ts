@@ -162,11 +162,11 @@ export const seedProviderRecords: ProviderRecord[] = [
 ];
 
 export const seedModelRecords: ModelRecord[] = [
-  { id: "claude-3-5-sonnet", providerId: "anthropic", name: "Claude", version: "3.5 Sonnet", comment: "clean glassmorphism", isActive: true, createdAt: "2026-01-03T10:00:00.000Z" },
-  { id: "gpt-4o", providerId: "openai", name: "GPT", version: "4o", comment: "balanced output", isActive: true, createdAt: "2026-01-03T10:00:00.000Z" },
-  { id: "gemini-1-5-pro", providerId: "google", name: "Gemini", version: "1.5 Pro", comment: "interesting layout", isActive: true, createdAt: "2026-01-03T10:00:00.000Z" },
-  { id: "llama-3-1-405b", providerId: "meta", name: "Llama", version: "3.1 405B", comment: "missed styling", isActive: true, createdAt: "2026-01-03T10:00:00.000Z" },
-  { id: "grok-2", providerId: "xai", name: "Grok", version: "2", comment: "basic structure", isActive: true, createdAt: "2026-01-03T10:00:00.000Z" },
+  { id: "claude-3-5-sonnet", providerId: "anthropic", name: "Claude", version: "3.5 Sonnet", comment: "clean glassmorphism", isActive: true, createdAt: "2026-01-03T10:00:00.000Z", lastUsedAt: "2026-03-23T06:35:00.000Z" },
+  { id: "gpt-4o", providerId: "openai", name: "GPT", version: "4o", comment: "balanced output", isActive: true, createdAt: "2026-01-03T10:00:00.000Z", lastUsedAt: "2026-03-23T06:20:00.000Z" },
+  { id: "gemini-1-5-pro", providerId: "google", name: "Gemini", version: "1.5 Pro", comment: "interesting layout", isActive: true, createdAt: "2026-01-03T10:00:00.000Z", lastUsedAt: "2026-03-23T06:10:00.000Z" },
+  { id: "llama-3-1-405b", providerId: "meta", name: "Llama", version: "3.1 405B", comment: "missed styling", isActive: true, createdAt: "2026-01-03T10:00:00.000Z", lastUsedAt: "2026-03-05T07:10:00.000Z" },
+  { id: "grok-2", providerId: "xai", name: "Grok", version: "2", comment: "basic structure", isActive: true, createdAt: "2026-01-03T10:00:00.000Z", lastUsedAt: "2026-02-11T07:10:00.000Z" },
 ];
 
 export const seedPromptVersionRecords: PromptVersionRecord[] = [

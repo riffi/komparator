@@ -1,5 +1,4 @@
 import { ExperimentListItem } from "@/entities/experiment/model/types";
-import { filterExperiments } from "@/entities/experiment/model/selectors";
 import { filterStore } from "@/features/experiment-filters/model/use-experiment-filters";
 import { Button } from "@/shared/ui/button";
 import { ExperimentCard } from "@/widgets/experiments-list/ui/experiment-card";
@@ -14,12 +13,19 @@ export function ExperimentsGrid({
   onCreate: () => void;
 }) {
   const filters = filterStore();
-  const filteredExperiments = filterExperiments(experiments, filters);
 
   if (loading) {
     return (
       <div className="rounded-lg border border-dashed border-border/80 bg-surface/40 px-6 py-12 text-center">
         <p className="font-mono text-sm text-dim">Loading experiments...</p>
+      </div>
+    );
+  }
+
+  if (experiments.length === 0 && filters.query.trim()) {
+    return (
+      <div className="rounded-lg border border-dashed border-border/80 bg-surface/40 px-6 py-12 text-center">
+        <p className="font-mono text-sm text-dim">No experiments match your search.</p>
       </div>
     );
   }
@@ -78,18 +84,10 @@ export function ExperimentsGrid({
     );
   }
 
-  if (filteredExperiments.length === 0) {
-    return (
-      <div className="rounded-lg border border-dashed border-border/80 bg-surface/40 px-6 py-12 text-center">
-        <p className="font-mono text-sm text-dim">No experiments match your search.</p>
-      </div>
-    );
-  }
-
   if (filters.viewMode === "grouped") {
     const sections = new Map<string, { name: string; color: string; items: ExperimentListItem[] }>();
 
-    for (const experiment of filteredExperiments) {
+    for (const experiment of experiments) {
       const key = experiment.categoryId ?? "uncategorized";
       const current = sections.get(key) ?? {
         name: experiment.categoryName,
@@ -126,7 +124,7 @@ export function ExperimentsGrid({
 
   return (
     <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-5">
-      {filteredExperiments.map((experiment) => (
+      {experiments.map((experiment) => (
         <ExperimentCard key={experiment.id} experiment={experiment} />
       ))}
     </section>

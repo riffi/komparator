@@ -35,6 +35,7 @@ import {
   loadExperimentWorkspace,
   loadModelOptions,
   loadProvidersCatalog,
+  loadResultHtmlContent,
   loadWrapperOptions,
   ModelSelectOption,
   ProviderManagerItem,
@@ -61,6 +62,8 @@ export function ExperimentDetailPage() {
   const navigate = useNavigate();
   const { experimentId = "" } = useParams();
   const [workspace, setWorkspace] = useState<ExperimentWorkspace | null>(null);
+  const [resultHtmlById, setResultHtmlById] = useState<Record<string, string>>({});
+  const [loadingResultHtmlIds, setLoadingResultHtmlIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"results" | "prompt">("results");
   const [viewMode, setViewMode] = useState<"single" | "sbs">("single");
@@ -157,6 +160,11 @@ export function ExperimentDetailPage() {
     void refreshWorkspace();
   }, [refreshWorkspace]);
 
+  useEffect(() => {
+    setResultHtmlById({});
+    setLoadingResultHtmlIds([]);
+  }, [experimentId]);
+
   const visibleResults = useMemo(() => {
     if (!workspace || !selectedVersionId) {
       return [];
@@ -234,6 +242,50 @@ export function ExperimentDetailPage() {
   useEffect(() => {
     setNotesDraft(selectedResult?.notes ?? "");
   }, [selectedResult?.id, selectedResult?.notes]);
+
+  const ensureResultHtml = useCallback(async (resultId?: string) => {
+    if (!resultId) {
+      return null;
+    }
+
+    const cachedHtml = resultHtmlById[resultId];
+    if (cachedHtml !== undefined) {
+      return cachedHtml;
+    }
+
+    setLoadingResultHtmlIds((current) => (current.includes(resultId) ? current : [...current, resultId]));
+
+    try {
+      const htmlContent = await loadResultHtmlContent(resultId);
+
+      setResultHtmlById((current) => {
+        if (htmlContent === null || current[resultId] !== undefined) {
+          return current;
+        }
+
+        return {
+          ...current,
+          [resultId]: htmlContent,
+        };
+      });
+
+      return htmlContent;
+    } finally {
+      setLoadingResultHtmlIds((current) => current.filter((item) => item !== resultId));
+    }
+  }, [resultHtmlById]);
+
+  useEffect(() => {
+    void ensureResultHtml(selectedResult?.id);
+  }, [ensureResultHtml, selectedResult?.id]);
+
+  useEffect(() => {
+    if (viewMode !== "sbs") {
+      return;
+    }
+
+    void Promise.all([ensureResultHtml(slotA?.id), ensureResultHtml(slotB?.id)]);
+  }, [ensureResultHtml, slotA?.id, slotB?.id, viewMode]);
 
   useEffect(() => {
     setShowPreviewMenu(false);
@@ -344,6 +396,12 @@ export function ExperimentDetailPage() {
   const selectedManagerModel =
     filteredModelOptions.find((option) => option.id === resultForm.modelId) ?? selectedModel;
   const selectedResultIndex = selectedResult ? visibleResults.findIndex((item) => item.id === selectedResult.id) : -1;
+  const selectedResultHtml = selectedResult ? resultHtmlById[selectedResult.id] : undefined;
+  const slotAHtml = slotA ? resultHtmlById[slotA.id] : undefined;
+  const slotBHtml = slotB ? resultHtmlById[slotB.id] : undefined;
+  const selectedResultHtmlLoading = selectedResult ? loadingResultHtmlIds.includes(selectedResult.id) : false;
+  const slotAHtmlLoading = slotA ? loadingResultHtmlIds.includes(slotA.id) : false;
+  const slotBHtmlLoading = slotB ? loadingResultHtmlIds.includes(slotB.id) : false;
   const promptLineCount = Math.max(1, settingsDraft.promptText.split(/\r\n|\r|\n/).length);
   const promptLineNumbers = Array.from({ length: promptLineCount }, (_, index) => index + 1);
   const promptSettingsDirty = workspace && activePrompt
@@ -419,10 +477,11 @@ export function ExperimentDetailPage() {
     setShowPreviewMenu(false);
   };
 
-  const onOpenEditResult = (result: WorkspaceResultItem) => {
+  const onOpenEditResult = async (result: WorkspaceResultItem) => {
+    const htmlContent = (await ensureResultHtml(result.id)) ?? "";
     setEditingResult(result);
     setEditResultDraft({
-      htmlContent: result.htmlContent,
+      htmlContent,
       notes: result.notes,
     });
     setResultActionsId("");
@@ -441,6 +500,10 @@ export function ExperimentDetailPage() {
       htmlContent: editResultDraft.htmlContent,
       notes: editResultDraft.notes,
     });
+    setResultHtmlById((current) => ({
+      ...current,
+      [editingResult.id]: editResultDraft.htmlContent,
+    }));
     await refreshWorkspace();
     setSelectedResultId(editingResult.id);
     setEditingResult(null);
@@ -457,6 +520,11 @@ export function ExperimentDetailPage() {
     await deleteResultEntry({
       resultId: deletingId,
       experimentId: workspace.id,
+    });
+    setResultHtmlById((current) => {
+      const next = { ...current };
+      delete next[deletingId];
+      return next;
     });
     await refreshWorkspace();
     if (selectedResultId === deletingId) {
@@ -514,6 +582,10 @@ export function ExperimentDetailPage() {
       htmlContent: "",
       notes: "",
     });
+    setResultHtmlById((current) => ({
+      ...current,
+      [nextResultId]: resultForm.htmlContent.trim(),
+    }));
     await refreshWorkspace();
     setSelectedResultId(nextResultId);
     setSlotAId(nextResultId);
@@ -977,11 +1049,21 @@ export function ExperimentDetailPage() {
 
                 <div className="min-h-0 flex-1 overflow-auto bg-code p-4">
                   {viewMode === "single" ? (
-                    <SinglePreviewCanvas result={selectedResult} device={device} showCode={showCode} />
+                    <SinglePreviewCanvas
+                      result={selectedResult}
+                      htmlContent={selectedResultHtml}
+                      loading={selectedResultHtmlLoading}
+                      device={device}
+                      showCode={showCode}
+                    />
                   ) : (
                     <CompareCanvas
                       slotA={slotA}
                       slotB={slotB}
+                      slotAHtml={slotAHtml}
+                      slotBHtml={slotBHtml}
+                      slotAHtmlLoading={slotAHtmlLoading}
+                      slotBHtmlLoading={slotBHtmlLoading}
                       device={device}
                       showCode={showCode}
                       split={compareSplit}
@@ -1706,11 +1788,22 @@ export function ExperimentDetailPage() {
             </div>
             <div className="min-h-0 flex-1 overflow-auto bg-code p-4">
               {viewMode === "single" ? (
-                <SinglePreviewCanvas result={selectedResult} device={device} showCode={showCode} fullscreen />
+                <SinglePreviewCanvas
+                  result={selectedResult}
+                  htmlContent={selectedResultHtml}
+                  loading={selectedResultHtmlLoading}
+                  device={device}
+                  showCode={showCode}
+                  fullscreen
+                />
               ) : (
                 <CompareCanvas
                   slotA={slotA}
                   slotB={slotB}
+                  slotAHtml={slotAHtml}
+                  slotBHtml={slotBHtml}
+                  slotAHtmlLoading={slotAHtmlLoading}
+                  slotBHtmlLoading={slotBHtmlLoading}
                   device={device}
                   showCode={showCode}
                   fullscreen
@@ -1776,18 +1869,22 @@ function DeviceButton({ active, onClick, icon: Icon, label }: { active: boolean;
 
 function SinglePreviewCanvas({
   result,
+  htmlContent,
+  loading,
   device,
   showCode,
   fullscreen = false,
 }: {
   result?: WorkspaceResultItem;
+  htmlContent?: string;
+  loading: boolean;
   device: keyof typeof deviceWidths;
   showCode: boolean;
   fullscreen?: boolean;
 }) {
   if (showCode) {
     return (
-      <HtmlCodeBlock code={result?.htmlContent ?? "No result selected."} />
+      <HtmlCodeBlock code={htmlContent ?? (loading ? "Loading result HTML..." : "No result selected.")} />
     );
   }
 
@@ -1799,8 +1896,12 @@ function SinglePreviewCanvas({
       )}
       style={{ width: deviceWidths[device] }}
     >
-      {result ? (
-        <iframe title={result.id} srcDoc={result.htmlContent} className="h-full w-full border-0" sandbox="allow-scripts" />
+      {result && htmlContent ? (
+        <iframe title={result.id} srcDoc={htmlContent} className="h-full w-full border-0" sandbox="allow-scripts" />
+      ) : result ? (
+        <div className="flex h-full items-center justify-center font-mono text-sm text-slate-500">
+          {loading ? "Loading preview..." : "Preview unavailable"}
+        </div>
       ) : null}
     </div>
   );
@@ -1809,6 +1910,10 @@ function SinglePreviewCanvas({
 function CompareCanvas({
   slotA,
   slotB,
+  slotAHtml,
+  slotBHtml,
+  slotAHtmlLoading,
+  slotBHtmlLoading,
   device,
   showCode,
   fullscreen = false,
@@ -1817,6 +1922,10 @@ function CompareCanvas({
 }: {
   slotA?: WorkspaceResultItem;
   slotB?: WorkspaceResultItem;
+  slotAHtml?: string;
+  slotBHtml?: string;
+  slotAHtmlLoading: boolean;
+  slotBHtmlLoading: boolean;
   device: keyof typeof deviceWidths;
   showCode: boolean;
   fullscreen?: boolean;
@@ -1860,7 +1969,7 @@ function CompareCanvas({
       )}
     >
       <div className="min-h-0 min-w-0 self-stretch" style={{ width: `${split}%` }}>
-        <ComparePanel label="A" result={slotA} device={device} showCode={showCode} />
+        <ComparePanel label="A" result={slotA} htmlContent={slotAHtml} loading={slotAHtmlLoading} device={device} showCode={showCode} />
       </div>
       <button
         type="button"
@@ -1875,13 +1984,13 @@ function CompareCanvas({
         <span className="absolute h-12 w-2 rounded-full bg-white/10 opacity-0 transition group-hover:opacity-100" />
       </button>
       <div className="min-h-0 min-w-0 flex-1 self-stretch">
-        <ComparePanel label="B" result={slotB} device={device} showCode={showCode} accent="orange" />
+        <ComparePanel label="B" result={slotB} htmlContent={slotBHtml} loading={slotBHtmlLoading} device={device} showCode={showCode} accent="orange" />
       </div>
     </div>
   );
 }
 
-function ComparePanel({ label, result, device, showCode, accent = "blue" }: { label: "A" | "B"; result?: WorkspaceResultItem; device: keyof typeof deviceWidths; showCode: boolean; accent?: "blue" | "orange" }) {
+function ComparePanel({ label, result, htmlContent, loading, device, showCode, accent = "blue" }: { label: "A" | "B"; result?: WorkspaceResultItem; htmlContent?: string; loading: boolean; device: keyof typeof deviceWidths; showCode: boolean; accent?: "blue" | "orange" }) {
   if (!result) {
     return <div className="flex h-full min-h-0 items-center justify-center rounded-lg border border-dashed border-border/80 bg-[#050608] font-mono text-sm text-dim">Select a result</div>;
   }
@@ -1899,10 +2008,16 @@ function ComparePanel({ label, result, device, showCode, accent = "blue" }: { la
       </div>
       <div className="min-h-0 flex-1 overflow-auto p-3">
         {showCode ? (
-          <HtmlCodeBlock code={result.htmlContent} className="border-0 bg-transparent p-0" />
+          <HtmlCodeBlock code={htmlContent ?? (loading ? "Loading result HTML..." : "Preview unavailable")} className="border-0 bg-transparent p-0" />
         ) : (
           <div className="mx-auto h-full min-h-[420px] max-w-full overflow-hidden rounded-lg border border-border/80 bg-white" style={{ width: deviceWidths[device] }}>
-            <iframe title={result.id} srcDoc={result.htmlContent} className="h-full w-full border-0" sandbox="allow-scripts" />
+            {htmlContent ? (
+              <iframe title={result.id} srcDoc={htmlContent} className="h-full w-full border-0" sandbox="allow-scripts" />
+            ) : (
+              <div className="flex h-full items-center justify-center font-mono text-sm text-slate-500">
+                {loading ? "Loading preview..." : "Preview unavailable"}
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -16,7 +16,7 @@ export type ExperimentListItem = {
   createdLabel: string;
   updatedLabel: string;
   topResultPreview: {
-    htmlContent: string;
+    resultId: string;
     rating: number | null;
     providerName: string;
     providerColor: string;
@@ -28,6 +28,18 @@ export type ExperimentListItem = {
 export type ExperimentFilterInput = {
   query: string;
   sort: ExperimentSort;
+};
+
+export type ExperimentsPageInput = {
+  offset: number;
+  limit: number;
+  query: string;
+  sort: ExperimentSort;
+};
+
+export type ExperimentsPageResult = {
+  items: ExperimentListItem[];
+  total: number;
 };
 
 export type CategoryRecord = {
@@ -84,6 +96,7 @@ export type ModelRecord = {
   comment: string;
   isActive: boolean;
   createdAt: string;
+  lastUsedAt: string | null;
 };
 
 export type ResultRecord = {
@@ -99,6 +112,36 @@ export type ResultRecord = {
   createdAt: string;
 };
 
+export type StatsWorkspaceRecord = {
+  id: "workspace";
+  experimentsCount: number;
+  promptVersionsCount: number;
+  resultsCount: number;
+  ratedResultsCount: number;
+  usedModelsCount: number;
+  providersCount: number;
+  ratingSum: number;
+  updatedAt: string;
+};
+
+export type StatsModelRecord = {
+  modelId: string;
+  resultsCount: number;
+  ratedCount: number;
+  ratingSum: number;
+  wins: number;
+  experimentsParticipatedCount: number;
+  updatedAt: string;
+};
+
+export type StatsProviderRecord = {
+  providerId: string;
+  resultsCount: number;
+  ratedCount: number;
+  ratingSum: number;
+  updatedAt: string;
+};
+
 export type WorkspaceResultItem = {
   id: string;
   modelId: string;
@@ -111,7 +154,6 @@ export type WorkspaceResultItem = {
   attempt: number;
   rating: number | null;
   notes: string;
-  htmlContent: string;
   fileSizeBytes: number;
   lineCount: number;
   createdAt: string;

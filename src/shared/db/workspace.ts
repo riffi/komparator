@@ -2,10 +2,15 @@ import Dexie from "dexie";
 import { db } from "@/shared/db/schema";
 import {
   ExperimentListItem,
+  ExperimentsPageInput,
+  ExperimentsPageResult,
   ExperimentRecord,
   ExperimentWorkspace,
   ModelRecord,
   ProviderRecord,
+  StatsModelRecord,
+  StatsProviderRecord,
+  StatsWorkspaceRecord,
   WorkspaceResultItem,
   WrapperRecord,
 } from "@/entities/experiment/model/types";
@@ -171,6 +176,139 @@ function formatUpdatedLabel(value: string) {
   return `${diffWeeks} week${diffWeeks > 1 ? "s" : ""} ago`;
 }
 
+async function rebuildStatsAggregates() {
+  const [experiments, promptVersions, providers, models, results] = await Promise.all([
+    db.experiments.toArray(),
+    db.promptVersions.toArray(),
+    db.providers.toArray(),
+    db.models.toArray(),
+    db.results.toArray(),
+  ]);
+
+  const now = new Date().toISOString();
+  const promptVersionsById = new Map(promptVersions.map((item) => [item.id, item]));
+  const modelsById = new Map(models.map((item) => [item.id, item]));
+  const resultsByModelId = new Map<string, typeof results>();
+  const modelStats = new Map<string, StatsModelRecord>();
+  const providerStats = new Map<string, StatsProviderRecord>();
+  const experimentWinners = new Map<string, { topRating: number; modelIds: Set<string> }>();
+  let ratedResultsCount = 0;
+  let ratingSum = 0;
+
+  for (const result of results) {
+    const list = resultsByModelId.get(result.modelId) ?? [];
+    list.push(result);
+    resultsByModelId.set(result.modelId, list);
+
+    const model = modelsById.get(result.modelId);
+    if (!model) {
+      continue;
+    }
+
+    const modelRecord = modelStats.get(model.id) ?? {
+      modelId: model.id,
+      resultsCount: 0,
+      ratedCount: 0,
+      ratingSum: 0,
+      wins: 0,
+      experimentsParticipatedCount: 0,
+      updatedAt: now,
+    };
+    modelRecord.resultsCount += 1;
+
+    const providerRecord = providerStats.get(model.providerId) ?? {
+      providerId: model.providerId,
+      resultsCount: 0,
+      ratedCount: 0,
+      ratingSum: 0,
+      updatedAt: now,
+    };
+    providerRecord.resultsCount += 1;
+
+    if (result.rating !== null) {
+      ratedResultsCount += 1;
+      ratingSum += result.rating;
+      modelRecord.ratedCount += 1;
+      modelRecord.ratingSum += result.rating;
+      providerRecord.ratedCount += 1;
+      providerRecord.ratingSum += result.rating;
+
+      const promptVersion = promptVersionsById.get(result.promptVersionId);
+      if (promptVersion) {
+        const winnerRecord = experimentWinners.get(promptVersion.experimentId);
+        if (!winnerRecord || result.rating > winnerRecord.topRating) {
+          experimentWinners.set(promptVersion.experimentId, {
+            topRating: result.rating,
+            modelIds: new Set([model.id]),
+          });
+        } else if (result.rating === winnerRecord.topRating) {
+          winnerRecord.modelIds.add(model.id);
+        }
+      }
+    }
+
+    modelStats.set(model.id, modelRecord);
+    providerStats.set(model.providerId, providerRecord);
+  }
+
+  for (const model of models) {
+    const experimentsParticipated = new Set<string>();
+
+    for (const result of resultsByModelId.get(model.id) ?? []) {
+      const promptVersion = promptVersionsById.get(result.promptVersionId);
+      if (promptVersion) {
+        experimentsParticipated.add(promptVersion.experimentId);
+      }
+    }
+
+    const modelRecord = modelStats.get(model.id) ?? {
+      modelId: model.id,
+      resultsCount: 0,
+      ratedCount: 0,
+      ratingSum: 0,
+      wins: 0,
+      experimentsParticipatedCount: 0,
+      updatedAt: now,
+    };
+    modelRecord.experimentsParticipatedCount = experimentsParticipated.size;
+    modelStats.set(model.id, modelRecord);
+  }
+
+  for (const winner of experimentWinners.values()) {
+    for (const modelId of winner.modelIds) {
+      const modelRecord = modelStats.get(modelId);
+      if (modelRecord) {
+        modelRecord.wins += 1;
+      }
+    }
+  }
+
+  const workspaceRecord: StatsWorkspaceRecord = {
+    id: "workspace",
+    experimentsCount: experiments.length,
+    promptVersionsCount: promptVersions.length,
+    resultsCount: results.length,
+    ratedResultsCount,
+    usedModelsCount: new Set(results.map((item) => item.modelId)).size,
+    providersCount: providers.length,
+    ratingSum,
+    updatedAt: now,
+  };
+
+  await db.transaction("rw", [db.statsWorkspace, db.statsModels, db.statsProviders], async () => {
+    await db.statsWorkspace.clear();
+    await db.statsModels.clear();
+    await db.statsProviders.clear();
+    await db.statsWorkspace.add(workspaceRecord);
+    if (modelStats.size > 0) {
+      await db.statsModels.bulkAdd([...modelStats.values()]);
+    }
+    if (providerStats.size > 0) {
+      await db.statsProviders.bulkAdd([...providerStats.values()]);
+    }
+  });
+}
+
 export async function loadSidebarCategories(): Promise<SidebarCategoryItem[]> {
   const [categories, experiments] = await Promise.all([db.categories.toArray(), db.experiments.toArray()]);
   const counts = new Map<string, number>();
@@ -220,16 +358,8 @@ export async function loadWrapperOptions(): Promise<SelectOption[]> {
 }
 
 export async function loadModelOptions(): Promise<ModelSelectOption[]> {
-  const [models, providers, results] = await Promise.all([db.models.toArray(), db.providers.toArray(), db.results.toArray()]);
+  const [models, providers] = await Promise.all([db.models.toArray(), db.providers.toArray()]);
   const providersById = new Map(providers.map((provider) => [provider.id, provider]));
-  const lastUsedByModel = new Map<string, string>();
-
-  for (const result of results) {
-    const current = lastUsedByModel.get(result.modelId);
-    if (!current || Date.parse(result.createdAt) > Date.parse(current)) {
-      lastUsedByModel.set(result.modelId, result.createdAt);
-    }
-  }
 
   return [...models]
     .sort((left, right) => {
@@ -256,7 +386,7 @@ export async function loadModelOptions(): Promise<ModelSelectOption[]> {
         modelVersion: model.version,
         modelComment: model.comment,
         isActive: model.isActive,
-        lastUsedAt: lastUsedByModel.get(model.id) ?? null,
+        lastUsedAt: model.lastUsedAt,
       };
     });
 }
@@ -313,6 +443,7 @@ export async function createModelEntry(input: {
       comment: modelComment,
       isActive: input.isActive ?? true,
       createdAt: now,
+      lastUsedAt: null,
     };
     await db.models.add(modelRecord);
     return modelRecord.id;
@@ -440,6 +571,8 @@ export async function updateModelEntry(input: {
     comment: input.comment.trim(),
     isActive: input.isActive,
   });
+
+  await rebuildStatsAggregates();
 }
 
 export async function updateModelActive(modelId: string, isActive: boolean) {
@@ -534,15 +667,47 @@ export async function deleteWrapperEntry(wrapperId: string) {
   await db.wrappers.delete(wrapperId);
 }
 
-export async function loadExperimentsList(): Promise<ExperimentListItem[]> {
-  const [experiments, categories, promptVersions, results, models, providers] = await Promise.all([
-    db.experiments.toArray(),
+function getExperimentsSortCollection(sort: ExperimentsPageInput["sort"]) {
+  switch (sort) {
+    case "oldest":
+      return db.experiments.orderBy("createdAt");
+    case "title":
+      return db.experiments.orderBy("title");
+    case "newest":
+      return db.experiments.orderBy("createdAt").reverse();
+    case "updated":
+    default:
+      return db.experiments.orderBy("updatedAt").reverse();
+  }
+}
+
+export async function loadExperimentsPage(input: ExperimentsPageInput): Promise<ExperimentsPageResult> {
+  const normalizedQuery = input.query.trim().toLowerCase();
+  const baseCollection = getExperimentsSortCollection(input.sort);
+  const filteredCollection = normalizedQuery
+    ? baseCollection.filter((experiment) => experiment.title.toLowerCase().includes(normalizedQuery))
+    : baseCollection;
+  const [total, experiments, categories, models, providers] = await Promise.all([
+    filteredCollection.count(),
+    filteredCollection.offset(input.offset).limit(input.limit).toArray(),
     db.categories.toArray(),
-    db.promptVersions.toArray(),
-    db.results.toArray(),
     db.models.toArray(),
     db.providers.toArray(),
   ]);
+
+  if (experiments.length === 0) {
+    return {
+      items: [],
+      total,
+    };
+  }
+
+  const experimentIds = experiments.map((item) => item.id);
+  const promptVersions = await db.promptVersions.where("experimentId").anyOf(experimentIds).toArray();
+  const promptVersionIds = promptVersions.map((item) => item.id);
+  const results = promptVersionIds.length
+    ? await db.results.where("promptVersionId").anyOf(promptVersionIds).toArray()
+    : [];
 
   const categoriesById = new Map(categories.map((item) => [item.id, item]));
   const modelsById = new Map(models.map((item) => [item.id, item]));
@@ -562,7 +727,7 @@ export async function loadExperimentsList(): Promise<ExperimentListItem[]> {
     resultsByPromptVersion.set(result.promptVersionId, list);
   }
 
-  return experiments.map((experiment) => {
+  const items = experiments.map((experiment) => {
     const category = experiment.categoryId ? categoriesById.get(experiment.categoryId) : undefined;
     const experimentPromptVersions = promptVersionsByExperiment.get(experiment.id) ?? [];
     const experimentResults = experimentPromptVersions.flatMap((item) => resultsByPromptVersion.get(item.id) ?? []);
@@ -598,7 +763,7 @@ export async function loadExperimentsList(): Promise<ExperimentListItem[]> {
       topResultPreview:
         topResult && topResultModel && topResultProvider
           ? {
-              htmlContent: topResult.htmlContent,
+              resultId: topResult.id,
               rating: topResult.rating,
               providerName: topResultProvider.name,
               providerColor: topResultProvider.color,
@@ -608,6 +773,21 @@ export async function loadExperimentsList(): Promise<ExperimentListItem[]> {
           : null,
     } satisfies ExperimentListItem;
   });
+
+  return {
+    items,
+    total,
+  };
+}
+
+export async function loadExperimentPreviewHtml(resultId: string): Promise<string | null> {
+  const result = await db.results.get(resultId);
+  return result?.htmlContent ?? null;
+}
+
+export async function loadResultHtmlContent(resultId: string): Promise<string | null> {
+  const result = await db.results.get(resultId);
+  return result?.htmlContent ?? null;
 }
 
 export async function loadExperimentWorkspace(experimentId: string): Promise<ExperimentWorkspace | null> {
@@ -659,7 +839,6 @@ export async function loadExperimentWorkspace(experimentId: string): Promise<Exp
         attempt: result.attempt,
         rating: result.rating,
         notes: result.notes,
-        htmlContent: result.htmlContent,
         fileSizeBytes: result.fileSizeBytes,
         lineCount: result.lineCount,
         createdAt: result.createdAt,
@@ -701,6 +880,7 @@ export async function updateResultNotes(resultId: string, notes: string) {
 
 export async function updateResultRating(resultId: string, rating: number | null) {
   await db.results.update(resultId, { rating });
+  await rebuildStatsAggregates();
 }
 
 export async function updateResultEntry(input: {
@@ -728,10 +908,28 @@ export async function updateResultEntry(input: {
 export async function deleteResultEntry(input: { resultId: string; experimentId: string }) {
   const now = new Date().toISOString();
 
-  await db.transaction("rw", [db.results, db.experiments], async () => {
+  await db.transaction("rw", [db.results, db.models, db.experiments], async () => {
+    const result = await db.results.get(input.resultId);
     await db.results.delete(input.resultId);
+
+    if (result) {
+      const latestRemaining = await db.results.where("modelId").equals(result.modelId).toArray();
+      const lastUsedAt =
+        latestRemaining.length > 0
+          ? latestRemaining.reduce((latest, item) =>
+              Date.parse(item.createdAt) > Date.parse(latest.createdAt) ? item : latest,
+            ).createdAt
+          : null;
+
+      await db.models.update(result.modelId, {
+        lastUsedAt,
+      });
+    }
+
     await db.experiments.update(input.experimentId, { updatedAt: now });
   });
+
+  await rebuildStatsAggregates();
 }
 
 export async function createExperimentWithInitialPrompt(input: {
@@ -833,8 +1031,11 @@ export async function createResultEntry(input: {
       createdAt: now,
     });
 
+    await db.models.update(model.id, { lastUsedAt: now });
     await db.experiments.update(input.experimentId, { updatedAt: now });
   });
+
+  await rebuildStatsAggregates();
 
   return resultId;
 }
@@ -969,14 +1170,22 @@ export async function createPromptVersionEntry(input: {
 }
 
 export async function loadStatsDashboard(): Promise<StatsDashboardData> {
-  const [experiments, categories, promptVersions, results, models, providers] = await Promise.all([
-    db.experiments.toArray(),
+  const [workspaceStats, modelAggregateRows, providerAggregateRows, categories, experiments, promptVersions, results, models, providers] = await Promise.all([
+    db.statsWorkspace.get("workspace"),
+    db.statsModels.toArray(),
+    db.statsProviders.toArray(),
     db.categories.toArray(),
+    db.experiments.toArray(),
     db.promptVersions.toArray(),
     db.results.toArray(),
     db.models.toArray(),
     db.providers.toArray(),
   ]);
+
+  if (!workspaceStats && results.length > 0) {
+    await rebuildStatsAggregates();
+    return loadStatsDashboard();
+  }
 
   const categoriesById = new Map(categories.map((item) => [item.id, item]));
   const promptVersionsById = new Map(promptVersions.map((item) => [item.id, item]));
@@ -984,10 +1193,9 @@ export async function loadStatsDashboard(): Promise<StatsDashboardData> {
   const modelsById = new Map(models.map((item) => [item.id, item]));
   const providersById = new Map(providers.map((item) => [item.id, item]));
   const ratedResults = results.filter((item) => item.rating !== null);
-
   const averageRating =
-    ratedResults.length > 0
-      ? ratedResults.reduce((sum, item) => sum + (item.rating ?? 0), 0) / ratedResults.length
+    workspaceStats && workspaceStats.ratedResultsCount > 0
+      ? workspaceStats.ratingSum / workspaceStats.ratedResultsCount
       : null;
 
   const summary: StatsSummaryCard[] = [
@@ -998,12 +1206,12 @@ export async function loadStatsDashboard(): Promise<StatsDashboardData> {
     },
     {
       label: "Results",
-      value: String(results.length),
-      helper: `${ratedResults.length} rated`,
+      value: String(workspaceStats?.resultsCount ?? results.length),
+      helper: `${workspaceStats?.ratedResultsCount ?? ratedResults.length} rated`,
     },
     {
       label: "Models used",
-      value: String(new Set(results.map((item) => item.modelId)).size),
+      value: String(workspaceStats?.usedModelsCount ?? new Set(results.map((item) => item.modelId)).size),
       helper: `${providers.length} provider${providers.length === 1 ? "" : "s"}`,
     },
     {
@@ -1013,63 +1221,9 @@ export async function loadStatsDashboard(): Promise<StatsDashboardData> {
     },
   ];
 
-  const modelStats = new Map<
-    string,
-    { sum: number; ratedCount: number; wins: number; experimentsParticipated: Set<string> }
-  >();
-
-  for (const result of ratedResults) {
-    const promptVersion = promptVersionsById.get(result.promptVersionId);
-    const experimentId = promptVersion?.experimentId;
-    const current = modelStats.get(result.modelId) ?? {
-      sum: 0,
-      ratedCount: 0,
-      wins: 0,
-      experimentsParticipated: new Set<string>(),
-    };
-
-    current.sum += result.rating ?? 0;
-    current.ratedCount += 1;
-    if (experimentId) {
-      current.experimentsParticipated.add(experimentId);
-    }
-    modelStats.set(result.modelId, current);
-  }
-
-  const experimentTopScores = new Map<string, number>();
-  const experimentWinningModels = new Map<string, Set<string>>();
-
-  for (const result of ratedResults) {
-    const promptVersion = promptVersionsById.get(result.promptVersionId);
-    const experimentId = promptVersion?.experimentId;
-    if (!experimentId || result.rating === null) {
-      continue;
-    }
-
-    const currentTop = experimentTopScores.get(experimentId);
-    if (currentTop === undefined || result.rating > currentTop) {
-      experimentTopScores.set(experimentId, result.rating);
-      experimentWinningModels.set(experimentId, new Set([result.modelId]));
-      continue;
-    }
-
-    if (result.rating === currentTop) {
-      experimentWinningModels.get(experimentId)?.add(result.modelId);
-    }
-  }
-
-  for (const modelIds of experimentWinningModels.values()) {
-    for (const modelId of modelIds) {
-      const current = modelStats.get(modelId);
-      if (current) {
-        current.wins += 1;
-      }
-    }
-  }
-
-  const leaderboard = [...modelStats.entries()]
-    .map(([modelId, stats]) => {
-      const model = modelsById.get(modelId);
+  const leaderboard = modelAggregateRows
+    .map((stats) => {
+      const model = modelsById.get(stats.modelId);
       const provider = model ? providersById.get(model.providerId) : undefined;
 
       if (!model || !provider || stats.ratedCount === 0) {
@@ -1077,49 +1231,32 @@ export async function loadStatsDashboard(): Promise<StatsDashboardData> {
       }
 
       return {
-        modelId,
+        modelId: stats.modelId,
         providerName: provider.name,
         providerColor: provider.color,
         modelName: model.name,
         modelVersion: model.version,
-        avgRating: stats.sum / stats.ratedCount,
+        avgRating: stats.ratingSum / stats.ratedCount,
         ratedCount: stats.ratedCount,
         winRate:
-          stats.experimentsParticipated.size > 0 ? (stats.wins / stats.experimentsParticipated.size) * 100 : 0,
+          stats.experimentsParticipatedCount > 0 ? (stats.wins / stats.experimentsParticipatedCount) * 100 : 0,
       } satisfies StatsLeaderboardItem;
     })
     .filter((item): item is StatsLeaderboardItem => item !== null)
     .sort((left, right) => right.avgRating - left.avgRating || right.ratedCount - left.ratedCount);
 
-  const providerStats = new Map<string, { sum: number; ratedCount: number; resultsCount: number }>();
-
-  for (const result of results) {
-    const model = modelsById.get(result.modelId);
-    if (!model) {
-      continue;
-    }
-
-    const current = providerStats.get(model.providerId) ?? { sum: 0, ratedCount: 0, resultsCount: 0 };
-    current.resultsCount += 1;
-    if (result.rating !== null) {
-      current.sum += result.rating;
-      current.ratedCount += 1;
-    }
-    providerStats.set(model.providerId, current);
-  }
-
-  const providerBreakdown = [...providerStats.entries()]
-    .map(([providerId, stats]) => {
-      const provider = providersById.get(providerId);
+  const providerBreakdown = providerAggregateRows
+    .map((stats) => {
+      const provider = providersById.get(stats.providerId);
       if (!provider || stats.ratedCount === 0) {
         return null;
       }
 
       return {
-        providerId,
+        providerId: stats.providerId,
         providerName: provider.name,
         providerColor: provider.color,
-        avgRating: stats.sum / stats.ratedCount,
+        avgRating: stats.ratingSum / stats.ratedCount,
         resultsCount: stats.resultsCount,
       } satisfies StatsProviderBreakdownItem;
     })

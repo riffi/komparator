@@ -2,7 +2,7 @@ docType: data-spec
 format_version: 0.0.1
 metadata:
   name: Komparator
-  version: 0.3.0
+  version: 0.5.0
   author: ""
   created_at: 2026-03-23
   updated_at: 2026-03-23
@@ -21,6 +21,8 @@ description: |
   - Управление экспериментами с версионностью промптов
   - Настраиваемые оверлей-обёртки (wrapper) для стандартизации условий
   - Хранение и рендер HTML-результатов от разных моделей
+  - Постраничная загрузка списка экспериментов с ленивыми card preview
+  - Локальные предвычисленные агрегаты для быстрого stats dashboard
   - Детальное описание моделей (провайдер, версия, режим thinking)
   - Side-by-side визуальное сравнение с рейтингом по 10-балльной шкале
   - Категоризация и тегирование экспериментов
@@ -110,7 +112,7 @@ entities:
         type: string
         required: true
         label: Название
-        description: Краткое название эксперимента
+        description: Краткое название эксперимента. Используется для пользовательского поиска и A-Z сортировки в списке экспериментов.
       description:
         type: string
         label: Описание
@@ -286,7 +288,7 @@ entities:
         type: string
         required: true
         label: HTML-код
-        description: Полный HTML-код, полученный от модели
+        description: Полный HTML-код, полученный от модели. На detail-экране отдается целиком, но в experiments list не входит в базовую page-проекцию и запрашивается отдельно только для lazy mini-preview.
       rating:
         type: integer
         label: Рейтинг
@@ -311,6 +313,72 @@ entities:
       - - prompt_version_id
         - llm_model_id
         - attempt
+  stats_workspace:
+    label: Сводка workspace analytics
+    description: |
+      Единичная агрегированная запись для верхнего ряда карточек в Stats.
+      Обновляется при изменении результатов и хранит только счётчики и суммы.
+    fields:
+      id:
+        type: string
+        pk: true
+        description: Фиксированное значение `workspace`
+      experiments_count:
+        type: integer
+      prompt_versions_count:
+        type: integer
+      results_count:
+        type: integer
+      rated_results_count:
+        type: integer
+      used_models_count:
+        type: integer
+      providers_count:
+        type: integer
+      rating_sum:
+        type: number
+      updated_at:
+        type: datetime
+  stats_model:
+    label: Агрегаты по модели
+    description: |
+      Предвычисленные метрики для leaderboard и summary-представлений.
+      Названия модели и провайдера берутся из актуальных записей llm_model/provider при чтении.
+    fields:
+      model_id:
+        type: uuid
+        pk: true
+        fk: llm_model.id
+      results_count:
+        type: integer
+      rated_count:
+        type: integer
+      rating_sum:
+        type: number
+      wins:
+        type: integer
+      experiments_participated_count:
+        type: integer
+      updated_at:
+        type: datetime
+  stats_provider:
+    label: Агрегаты по провайдеру
+    description: |
+      Предвычисленные метрики для provider breakdown.
+      Использует текущий provider_id модели; подписи и цвет подтягиваются из provider при чтении.
+    fields:
+      provider_id:
+        type: uuid
+        pk: true
+        fk: provider.id
+      results_count:
+        type: integer
+      rated_count:
+        type: integer
+      rating_sum:
+        type: number
+      updated_at:
+        type: datetime
 relations:
   - entity_a: category
     entity_b: experiment
@@ -342,3 +410,116 @@ relations:
     cardinality: one_to_many
     label: generates
     description: Модель генерирует результаты для разных промптов
+indexes:
+  experiment:
+    - id
+    - title
+    - category_id
+    - wrapper_id
+    - created_at
+    - updated_at
+  prompt_version:
+    - id
+    - experiment_id
+    - [experiment_id, version_number]
+  provider:
+    - id
+    - name
+    - is_active
+  llm_model:
+    - id
+    - provider_id
+    - [provider_id, name, version, comment]
+    - is_active
+  result:
+    - id
+    - prompt_version_id
+    - llm_model_id
+    - [prompt_version_id, llm_model_id, attempt]
+    - created_at
+    - rating
+  stats_workspace:
+    - id
+    - updated_at
+  stats_model:
+    - model_id
+    - updated_at
+  stats_provider:
+    - provider_id
+    - updated_at
+read_models:
+  experiments_list_page:
+    description: |
+      Лёгкая page-проекция для landing screen со списком экспериментов.
+      Возвращает только один page результатов (`offset`, `limit`) после применения `query` и `sort`.
+      Агрегации считаются только для экспериментов текущей страницы, а не для всей базы.
+    input:
+      query:
+        type: string
+        description: Подстрока для поиска по experiment.title
+      sort:
+        type: enum(updated, newest, oldest, title)
+        description: Пользовательская сортировка списка
+      offset:
+        type: integer
+        description: Смещение страницы
+      limit:
+        type: integer
+        description: Размер страницы
+    output:
+      total:
+        type: integer
+        description: Общее число совпавших экспериментов для текущих query/sort
+      items:
+        type: array
+        item:
+          experiment_id: uuid
+          title: string
+          description: string
+          category_id: uuid|null
+          category_name: string
+          category_color: string
+          prompt_count: integer
+          result_count: integer
+          avg_rating: number|null
+          created_at: datetime
+          updated_at: datetime
+          top_result_preview:
+            type: object|null
+            description: |
+              Метаданные top result для карточки. Полный html_content здесь не передаётся.
+              Нужен для подписи превью и отдельной lazy-загрузки.
+            fields:
+              result_id: uuid
+              rating: number|null
+              provider_name: string
+              provider_color: string
+              model_name: string
+              model_version: string
+  experiment_card_preview:
+    description: |
+      Отдельная точечная загрузка html_content для mini-preview на карточке эксперимента.
+      Вызывается только когда карточка входит в viewport или приближается к нему.
+    input:
+      result_id:
+        type: uuid
+    output:
+      html_content:
+        type: string|null
+  stats_dashboard:
+    description: |
+      Гибридная read-модель для stats dashboard.
+      Summary cards, model leaderboard и provider breakdown читаются
+      из локальных aggregate tables. Category matrix и rating history
+      могут по-прежнему вычисляться из raw rated results.
+    output:
+      summary:
+        type: array
+      leaderboard:
+        type: array
+      provider_breakdown:
+        type: array
+      category_matrix:
+        type: array
+      rating_history:
+        type: array
