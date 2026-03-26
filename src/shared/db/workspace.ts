@@ -43,6 +43,7 @@ export type WrapperSelectOption = SelectOption & {
   template: string;
   wrapperName: string;
   versionNumber: number;
+  changeNote: string;
 };
 
 export type ModelSelectOption = {
@@ -973,6 +974,7 @@ export async function loadWrapperOptions(): Promise<WrapperSelectOption[]> {
         template: version.template,
         wrapperName: wrapper.name,
         versionNumber: version.versionNumber,
+        changeNote: version.changeNote,
       } satisfies WrapperSelectOption;
     })
     .filter((item): item is WrapperSelectOption => item !== null);

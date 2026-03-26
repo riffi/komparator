@@ -59,12 +59,15 @@ import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
 import { HtmlCodeBlock } from "@/shared/ui/html-code-block";
 import { appRoutes } from "@/shared/config/routes";
 import { Select } from "@/shared/ui/select";
+import { WrapperVersionPickerDialog } from "@/shared/ui/wrapper-version-picker-dialog";
 
 const deviceWidths = {
   mobile: "375px",
   tablet: "768px",
   desktop: "100%",
 } as const;
+
+const ALL_VERSIONS_FILTER = "__all_versions__";
 
 export function ExperimentDetailPage() {
   const navigate = useNavigate();
@@ -76,7 +79,8 @@ export function ExperimentDetailPage() {
   const [activeTab, setActiveTab] = useState<"results" | "prompt">("results");
   const [viewMode, setViewMode] = useState<"single" | "sbs">("single");
   const [resultsSort, setResultsSort] = useState<"rating" | "date" | "model">("rating");
-  const [selectedVersionId, setSelectedVersionId] = useState<string>("");
+  const [selectedPromptVersionId, setSelectedPromptVersionId] = useState<string>("");
+  const [resultsVersionFilterId, setResultsVersionFilterId] = useState<string>("");
   const [selectedResultId, setSelectedResultId] = useState<string>("");
   const [slotAId, setSlotAId] = useState<string>("");
   const [slotBId, setSlotBId] = useState<string>("");
@@ -116,6 +120,7 @@ export function ExperimentDetailPage() {
   const [deleteVersionTarget, setDeleteVersionTarget] = useState<{ id: string; versionNumber: number } | null>(null);
   const [deletingVersionId, setDeletingVersionId] = useState<string | null>(null);
   const [savingVersion, setSavingVersion] = useState(false);
+  const [showWrapperPicker, setShowWrapperPicker] = useState(false);
   const [versionDraft, setVersionDraft] = useState({
     wrapperId: "",
     promptText: "",
@@ -183,19 +188,8 @@ export function ExperimentDetailPage() {
     setLoadingResultHtmlIds([]);
   }, [experimentId]);
 
-  const visibleResults = useMemo(() => {
-    if (!workspace || !selectedVersionId) {
-      return [];
-    }
-
-    const activeVersion = workspace.promptVersions.find((item) => item.id === selectedVersionId);
-    if (!activeVersion) {
-      return [];
-    }
-
-    const scoped = workspace.results.filter((item) => item.promptVersionNumber === activeVersion.versionNumber);
-
-    return [...scoped].sort((left, right) => {
+  const sortVisibleResults = useCallback(
+    (left: WorkspaceResultItem, right: WorkspaceResultItem) => {
       switch (resultsSort) {
         case "date":
           return Date.parse(right.createdAt) - Date.parse(left.createdAt);
@@ -209,15 +203,64 @@ export function ExperimentDetailPage() {
         default:
           return (right.rating ?? -1) - (left.rating ?? -1) || Date.parse(right.createdAt) - Date.parse(left.createdAt);
       }
-    });
-  }, [resultsSort, selectedVersionId, workspace]);
+    },
+    [resultsSort],
+  );
+
+  const visibleResults = useMemo(() => {
+    if (!workspace || !resultsVersionFilterId) {
+      return [];
+    }
+
+    if (resultsVersionFilterId === ALL_VERSIONS_FILTER) {
+      return [...workspace.results].sort(sortVisibleResults);
+    }
+
+    const activeVersion = workspace.promptVersions.find((item) => item.id === resultsVersionFilterId);
+    if (!activeVersion) {
+      return [];
+    }
+
+    const scoped = workspace.results.filter((item) => item.promptVersionNumber === activeVersion.versionNumber);
+
+    return [...scoped].sort(sortVisibleResults);
+  }, [resultsVersionFilterId, sortVisibleResults, workspace]);
+
+  const visibleResultGroups = useMemo(() => {
+    if (!workspace) {
+      return [];
+    }
+
+    if (resultsVersionFilterId !== ALL_VERSIONS_FILTER) {
+      const activeVersion = workspace.promptVersions.find((item) => item.id === resultsVersionFilterId);
+      return activeVersion
+        ? [
+            {
+              versionId: activeVersion.id,
+              versionNumber: activeVersion.versionNumber,
+              items: visibleResults,
+            },
+          ]
+        : [];
+    }
+
+    return workspace.promptVersions
+      .map((version) => ({
+        versionId: version.id,
+        versionNumber: version.versionNumber,
+        items: workspace.results
+          .filter((item) => item.promptVersionNumber === version.versionNumber)
+          .sort(sortVisibleResults),
+      }))
+      .filter((group) => group.items.length > 0);
+  }, [resultsVersionFilterId, sortVisibleResults, visibleResults, workspace]);
 
   useEffect(() => {
     if (!workspace?.promptVersions.length) {
       return;
     }
 
-    setSelectedVersionId((current) =>
+    setSelectedPromptVersionId((current) =>
       current && workspace.promptVersions.some((item) => item.id === current)
         ? current
         : workspace.promptVersions[0].id,
@@ -229,10 +272,12 @@ export function ExperimentDetailPage() {
       return;
     }
 
-    if (!workspace.promptVersions.some((item) => item.id === selectedVersionId)) {
-      setSelectedVersionId(workspace.promptVersions[0].id);
-    }
-  }, [selectedVersionId, workspace]);
+    setResultsVersionFilterId((current) =>
+      current === ALL_VERSIONS_FILTER || (current && workspace.promptVersions.some((item) => item.id === current))
+        ? current
+        : workspace.promptVersions[0].id,
+    );
+  }, [workspace]);
 
   useEffect(() => {
     if (!visibleResults.length) {
@@ -261,9 +306,11 @@ export function ExperimentDetailPage() {
   const slotA = visibleResults.find((item) => item.id === slotAId) ?? visibleResults[0];
   const slotB = visibleResults.find((item) => item.id === slotBId) ?? visibleResults[1] ?? visibleResults[0];
   const activePrompt =
-    workspace?.promptVersions.find((item) => item.id === selectedVersionId) ?? workspace?.promptVersions[0];
+    workspace?.promptVersions.find((item) => item.id === selectedPromptVersionId) ?? workspace?.promptVersions[0];
   const selectedDraftWrapper = wrapperOptions.find((option) => option.id === versionDraft.wrapperId);
+  const selectedVersionWrapperLabel = selectedDraftWrapper?.label ?? "No wrapper";
   const hasResults = visibleResults.length > 0;
+  const allVersionsSelected = resultsVersionFilterId === ALL_VERSIONS_FILTER;
   const selectedVersionHasResults = (activePrompt?.resultCount ?? 0) > 0;
   const canEditSelectedVersionFields = Boolean(activePrompt) && !versionDraftMode && !selectedVersionHasResults;
   const canEditSelectedVersionNote = Boolean(activePrompt) && !versionDraftMode;
@@ -331,7 +378,7 @@ export function ExperimentDetailPage() {
 
   useEffect(() => {
     setResultActionsId("");
-  }, [selectedResultId, viewMode, selectedVersionId]);
+  }, [resultsVersionFilterId, selectedResultId, viewMode]);
 
   useEffect(() => {
     if (!showFullscreen) {
@@ -883,7 +930,8 @@ export function ExperimentDetailPage() {
       changeNote: nextChangeNote,
     });
     await refreshWorkspace();
-    setSelectedVersionId(promptVersionId);
+    setSelectedPromptVersionId(promptVersionId);
+    setResultsVersionFilterId(promptVersionId);
     setVersionDraftMode(false);
     setCreatingVersion(false);
   };
@@ -912,7 +960,7 @@ export function ExperimentDetailPage() {
       }
 
       await refreshWorkspace();
-      setSelectedVersionId(activePrompt.id);
+      setSelectedPromptVersionId(activePrompt.id);
     } finally {
       setSavingVersion(false);
     }
@@ -1079,17 +1127,18 @@ export function ExperimentDetailPage() {
             </div>
             <Select
               className="h-9"
-              wrapperClassName="min-w-[96px]"
-              value={selectedVersionId}
-              onChange={(event) => setSelectedVersionId(event.target.value)}
+              wrapperClassName="min-w-[124px]"
+              value={resultsVersionFilterId}
+              onChange={(event) => setResultsVersionFilterId(event.target.value)}
             >
+              <option value={ALL_VERSIONS_FILTER}>All versions</option>
               {workspace.promptVersions.map((version) => (
                 <option key={version.id} value={version.id}>
                   v{version.versionNumber}
                 </option>
               ))}
             </Select>
-            <Button size="sm" onClick={() => setShowAddResult(true)}>
+            <Button size="sm" onClick={() => setShowAddResult(true)} disabled={allVersionsSelected}>
               <Plus className="h-4 w-4" />
               Add result
             </Button>
@@ -1104,7 +1153,7 @@ export function ExperimentDetailPage() {
               <div>
                 <div className="font-mono text-xs uppercase tracking-[0.12em] text-dim">Results</div>
                 <div className="mt-1 text-sm text-muted">
-                  Experiment version v{activePrompt?.versionNumber ?? "-"}
+                  {allVersionsSelected ? "All experiment versions" : `Experiment version v${activePrompt?.versionNumber ?? "-"}`}
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -1121,9 +1170,18 @@ export function ExperimentDetailPage() {
                 </Select>
               </div>
             </div>
-            <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2">
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-2">
               {hasResults ? (
-                visibleResults.map((result) => {
+                visibleResultGroups.map((group) => (
+                  <div key={group.versionId} className="space-y-1">
+                    {allVersionsSelected ? (
+                      <div className="px-2 pt-1">
+                        <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
+                          Version v{group.versionNumber}
+                        </div>
+                      </div>
+                    ) : null}
+                    {group.items.map((result) => {
                   const isSelected = selectedResult?.id === result.id;
                   const isA = slotA?.id === result.id;
                   const isB = slotB?.id === result.id;
@@ -1217,10 +1275,14 @@ export function ExperimentDetailPage() {
                       </div>
                     </button>
                   );
-                })
+                    })}
+                  </div>
+                ))
               ) : (
                 <div className="rounded-lg border border-dashed border-border/80 bg-surface/30 px-4 py-6 text-sm text-muted">
-                  No results yet for experiment version v{activePrompt?.versionNumber ?? "-"}.
+                  {allVersionsSelected
+                    ? "No results yet across any experiment version. Pick a concrete version in the toolbar to add a result."
+                    : `No results yet for experiment version v${activePrompt?.versionNumber ?? "-"}.`}
                 </div>
               )}
             </div>
@@ -1402,7 +1464,7 @@ export function ExperimentDetailPage() {
                   key={version.id}
                   className={cn(
                     "rounded-lg border px-3 py-3 transition",
-                    selectedVersionId === version.id
+                    selectedPromptVersionId === version.id
                       ? "border-primary/60 bg-primary-soft/20"
                       : "border-border/80 bg-code/40 hover:border-primary/40 hover:bg-code/70",
                   )}
@@ -1412,7 +1474,7 @@ export function ExperimentDetailPage() {
                       type="button"
                       className="min-w-0 flex-1 text-left"
                       onClick={() => {
-                        setSelectedVersionId(version.id);
+                        setSelectedPromptVersionId(version.id);
                         setVersionDraftMode(false);
                       }}
                     >
@@ -1492,15 +1554,19 @@ export function ExperimentDetailPage() {
 
               <div className="mt-4 grid gap-4 lg:grid-cols-2">
                 {versionDraftMode || canEditSelectedVersionFields ? (
-                  <SelectField
-                    label="Wrapper version"
-                    value={versionDraft.wrapperId}
-                    options={wrapperOptions}
-                    emptyLabel="No wrapper"
-                    onChange={(value) =>
-                      setVersionDraft((current) => ({ ...current, wrapperId: value }))
-                    }
-                  />
+                  <div>
+                    <div className="mb-1 font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Wrapper version</div>
+                    <button
+                      type="button"
+                      className="flex min-h-10 w-full items-center justify-between rounded-md border border-border/80 bg-code px-3 py-2 text-left text-sm text-text transition hover:border-primary/50"
+                      onClick={() => setShowWrapperPicker(true)}
+                    >
+                      <span className="min-w-0 truncate">{selectedVersionWrapperLabel}</span>
+                      <span className="shrink-0 text-xs text-dim">
+                        {versionDraft.wrapperId ? "Change" : "Choose"}
+                      </span>
+                    </button>
+                  </div>
                 ) : (
                   <div>
                     <div className="mb-1 font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Wrapper</div>
@@ -1593,6 +1659,20 @@ export function ExperimentDetailPage() {
           }
         }}
         busy={deleteVersionTarget !== null && deletingVersionId === deleteVersionTarget.id}
+      />
+
+      <WrapperVersionPickerDialog
+        open={showWrapperPicker}
+        value={versionDraft.wrapperId}
+        options={wrapperOptions}
+        title="Choose wrapper version"
+        description={
+          versionDraftMode
+            ? "Pick the exact immutable wrapper version for this new experiment version draft."
+            : "Pick the exact immutable wrapper version for the selected experiment version."
+        }
+        onClose={() => setShowWrapperPicker(false)}
+        onSelect={(value) => setVersionDraft((current) => ({ ...current, wrapperId: value }))}
       />
 
       {showAddResult ? (
@@ -2574,38 +2654,6 @@ function RatingStars({
           Clear
         </button>
       ) : null}
-    </div>
-  );
-}
-
-function SelectField({
-  label,
-  value,
-  options,
-  emptyLabel,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  options: SelectOption[];
-  emptyLabel?: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <div>
-      <div className="mb-1 font-mono text-[11px] uppercase tracking-[0.12em] text-dim">{label}</div>
-      <Select
-        wrapperClassName="w-full"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-      >
-        {emptyLabel ? <option value="">{emptyLabel}</option> : null}
-        {options.map((option) => (
-          <option key={option.id} value={option.id}>
-            {option.label}
-          </option>
-        ))}
-      </Select>
     </div>
   );
 }

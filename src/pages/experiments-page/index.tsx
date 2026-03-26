@@ -9,6 +9,7 @@ import { ExperimentsGrid } from "@/widgets/experiments-list/ui/experiments-grid"
 import {
   CategoryManagerItem,
   SelectOption,
+  WrapperSelectOption,
   createCategoryEntry,
   createExperimentWithInitialPrompt,
   deleteCategoryEntry,
@@ -21,6 +22,7 @@ import {
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { Select } from "@/shared/ui/select";
+import { WrapperVersionPickerDialog } from "@/shared/ui/wrapper-version-picker-dialog";
 
 type ExperimentCreateForm = {
   title: string;
@@ -41,12 +43,13 @@ export function ExperimentsPage() {
   const [experiments, setExperiments] = useState<ExperimentListItem[]>([]);
   const [totalExperiments, setTotalExperiments] = useState(0);
   const [categoryOptions, setCategoryOptions] = useState<SelectOption[]>([]);
-  const [wrapperOptions, setWrapperOptions] = useState<SelectOption[]>([]);
+  const [wrapperOptions, setWrapperOptions] = useState<WrapperSelectOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [showCategories, setShowCategories] = useState(false);
   const [showAdvancedCreate, setShowAdvancedCreate] = useState(false);
+  const [showWrapperPicker, setShowWrapperPicker] = useState(false);
   const [saving, setSaving] = useState(false);
   const [categories, setCategories] = useState<CategoryManagerItem[]>([]);
   const [categoryForm, setCategoryForm] = useState({
@@ -221,6 +224,7 @@ export function ExperimentsPage() {
   };
 
   const hasMore = experiments.length < totalExperiments;
+  const selectedWrapperOption = wrapperOptions.find((option) => option.id === form.wrapperVersionId);
 
   return (
     <div className="space-y-6">
@@ -352,25 +356,23 @@ export function ExperimentsPage() {
                     </Select>
                   </label>
 
-                  <label className="space-y-2">
+                  <div className="space-y-2">
                     <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
                       Wrapper version
                     </span>
-                    <Select
-                      wrapperClassName="w-full"
-                      value={form.wrapperVersionId}
-                      onChange={(event) =>
-                        setForm((current) => ({ ...current, wrapperVersionId: event.target.value }))
-                      }
+                    <button
+                      type="button"
+                      className="flex min-h-10 w-full items-center justify-between rounded-md border border-border/80 bg-code px-3 py-2 text-left text-sm text-text transition hover:border-primary/50"
+                      onClick={() => setShowWrapperPicker(true)}
                     >
-                      <option value="">No wrapper</option>
-                      {wrapperOptions.map((option) => (
-                        <option key={option.id} value={option.id}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </Select>
-                  </label>
+                      <span className="min-w-0 truncate">
+                        {selectedWrapperOption ? selectedWrapperOption.label : "No wrapper"}
+                      </span>
+                      <span className="shrink-0 text-xs text-dim">
+                        {selectedWrapperOption ? "Change" : "Choose"}
+                      </span>
+                    </button>
+                  </div>
                 </>
               ) : null}
 
@@ -398,6 +400,16 @@ export function ExperimentsPage() {
           </form>
         </div>
       ) : null}
+
+      <WrapperVersionPickerDialog
+        open={showWrapperPicker}
+        value={form.wrapperVersionId}
+        options={wrapperOptions}
+        title="Choose wrapper version"
+        description="Pick the exact immutable wrapper version that should become part of the first experiment version."
+        onClose={() => setShowWrapperPicker(false)}
+        onSelect={(value) => setForm((current) => ({ ...current, wrapperVersionId: value }))}
+      />
 
       {showCategories ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
