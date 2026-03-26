@@ -155,7 +155,7 @@ export function ExperimentCard({ experiment }: ExperimentCardProps) {
 
       <div className="mt-auto border-t border-border/80 pt-3">
         <div className="grid grid-cols-3 gap-3">
-          <Stat label="Prompts" value={String(experiment.promptCount)} />
+          <Stat label="Versions" value={String(experiment.versionCount)} />
           <Stat label="Results" value={String(experiment.resultCount)} />
           <Stat
             label="Avg Rating"

@@ -1,6 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Check,
@@ -34,6 +33,7 @@ import {
   createModelEntry,
   createProviderEntry,
   CatalogModelBrowserItem,
+  deleteExperimentVersionEntry,
   loadCategoryOptions,
   loadCatalogBrowserItems,
   deleteResultEntry,
@@ -45,14 +45,17 @@ import {
   ModelSelectOption,
   ProviderManagerItem,
   SelectOption,
+  WrapperSelectOption,
   updateExperimentEntry,
+  updateExperimentVersionChangeNote,
+  updateExperimentVersionEntry,
   updateModelEntry,
-  updatePromptVersionEntry,
   updateResultEntry,
   updateResultNotes,
   updateResultRating,
 } from "@/shared/db/workspace";
 import { Button } from "@/shared/ui/button";
+import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
 import { HtmlCodeBlock } from "@/shared/ui/html-code-block";
 import { appRoutes } from "@/shared/config/routes";
 import { Select } from "@/shared/ui/select";
@@ -99,22 +102,26 @@ export function ExperimentDetailPage() {
   const [savingResult, setSavingResult] = useState(false);
   const [savingModel, setSavingModel] = useState(false);
   const [copyingPrompt, setCopyingPrompt] = useState(false);
-  const [savingPromptSettings, setSavingPromptSettings] = useState(false);
   const [creatingVersion, setCreatingVersion] = useState(false);
-  const [showExperimentSettings, setShowExperimentSettings] = useState(true);
   const [categoryOptions, setCategoryOptions] = useState<SelectOption[]>([]);
-  const [wrapperOptions, setWrapperOptions] = useState<SelectOption[]>([]);
+  const [wrapperOptions, setWrapperOptions] = useState<WrapperSelectOption[]>([]);
   const [modelOptions, setModelOptions] = useState<ModelSelectOption[]>([]);
   const [catalogItems, setCatalogItems] = useState<CatalogModelBrowserItem[]>([]);
   const [providersCatalog, setProvidersCatalog] = useState<ProviderManagerItem[]>([]);
-  const [settingsDraft, setSettingsDraft] = useState({
-    title: "",
-    description: "",
-    categoryId: "",
+  const [titleEditMode, setTitleEditMode] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
+  const [savingTitle, setSavingTitle] = useState(false);
+  const [categoryEditMode, setCategoryEditMode] = useState(false);
+  const [savingCategory, setSavingCategory] = useState(false);
+  const [deleteVersionTarget, setDeleteVersionTarget] = useState<{ id: string; versionNumber: number } | null>(null);
+  const [deletingVersionId, setDeletingVersionId] = useState<string | null>(null);
+  const [savingVersion, setSavingVersion] = useState(false);
+  const [versionDraft, setVersionDraft] = useState({
     wrapperId: "",
     promptText: "",
     changeNote: "",
   });
+  const [versionDraftMode, setVersionDraftMode] = useState(false);
   const [resultForm, setResultForm] = useState({
     modelId: "",
     htmlContent: "",
@@ -218,6 +225,16 @@ export function ExperimentDetailPage() {
   }, [workspace]);
 
   useEffect(() => {
+    if (!workspace?.promptVersions.length) {
+      return;
+    }
+
+    if (!workspace.promptVersions.some((item) => item.id === selectedVersionId)) {
+      setSelectedVersionId(workspace.promptVersions[0].id);
+    }
+  }, [selectedVersionId, workspace]);
+
+  useEffect(() => {
     if (!visibleResults.length) {
       setSelectedResultId("");
       setSlotAId("");
@@ -245,10 +262,20 @@ export function ExperimentDetailPage() {
   const slotB = visibleResults.find((item) => item.id === slotBId) ?? visibleResults[1] ?? visibleResults[0];
   const activePrompt =
     workspace?.promptVersions.find((item) => item.id === selectedVersionId) ?? workspace?.promptVersions[0];
+  const selectedDraftWrapper = wrapperOptions.find((option) => option.id === versionDraft.wrapperId);
   const hasResults = visibleResults.length > 0;
+  const selectedVersionHasResults = (activePrompt?.resultCount ?? 0) > 0;
+  const canEditSelectedVersionFields = Boolean(activePrompt) && !versionDraftMode && !selectedVersionHasResults;
+  const canEditSelectedVersionNote = Boolean(activePrompt) && !versionDraftMode;
   const composedPrompt = activePrompt
-    ? buildPromptForClipboard(activePrompt.promptText, workspace?.wrapperTemplate)
+    ? buildPromptForClipboard(activePrompt.promptText, activePrompt.wrapperTemplate)
     : "";
+  const draftComposedPrompt = buildPromptForClipboard(
+    versionDraft.promptText,
+    versionDraft.wrapperId ? selectedDraftWrapper?.template ?? null : null,
+  );
+  const previewComposedPrompt =
+    versionDraftMode || canEditSelectedVersionFields ? draftComposedPrompt : composedPrompt;
 
   useEffect(() => {
     setNotesDraft(selectedResult?.notes ?? "");
@@ -350,18 +377,30 @@ export function ExperimentDetailPage() {
       return;
     }
 
-    const activeVersion =
-      workspace.promptVersions.find((item) => item.id === selectedVersionId) ?? workspace.promptVersions[0];
+    setTitleDraft(workspace.title);
+    setTitleEditMode(false);
+    setCategoryEditMode(false);
+  }, [workspace]);
 
-    setSettingsDraft({
-      title: workspace.title,
-      description: workspace.description,
-      categoryId: workspace.categoryId ?? "",
-      wrapperId: workspace.wrapperId ?? "",
-      promptText: activeVersion?.promptText ?? "",
-      changeNote: activeVersion?.changeNote ?? "",
+  useEffect(() => {
+    if (!activePrompt || versionDraftMode) {
+      return;
+    }
+
+    setVersionDraft({
+      wrapperId: activePrompt.wrapperVersionId ?? "",
+      promptText: activePrompt.promptText ?? "",
+      changeNote: activePrompt.changeNote ?? "",
     });
-  }, [workspace, selectedVersionId, categoryOptions, wrapperOptions]);
+  }, [activePrompt, versionDraftMode]);
+
+  const selectedVersionDirty = Boolean(
+    !versionDraftMode &&
+      activePrompt &&
+      (versionDraft.promptText !== activePrompt.promptText ||
+        versionDraft.wrapperId !== (activePrompt.wrapperVersionId ?? "") ||
+        versionDraft.changeNote !== activePrompt.changeNote),
+  );
 
   const filteredModelOptions = useMemo(() => {
     const search = modelSearch.trim().toLowerCase();
@@ -437,16 +476,8 @@ export function ExperimentDetailPage() {
   const selectedResultHtmlLoading = selectedResult ? loadingResultHtmlIds.includes(selectedResult.id) : false;
   const slotAHtmlLoading = slotA ? loadingResultHtmlIds.includes(slotA.id) : false;
   const slotBHtmlLoading = slotB ? loadingResultHtmlIds.includes(slotB.id) : false;
-  const promptLineCount = Math.max(1, settingsDraft.promptText.split(/\r\n|\r|\n/).length);
+  const promptLineCount = Math.max(1, versionDraft.promptText.split(/\r\n|\r|\n/).length);
   const promptLineNumbers = Array.from({ length: promptLineCount }, (_, index) => index + 1);
-  const promptSettingsDirty = workspace && activePrompt
-    ? settingsDraft.title !== workspace.title ||
-      settingsDraft.description !== workspace.description ||
-      settingsDraft.categoryId !== (workspace.categoryId ?? "") ||
-      settingsDraft.wrapperId !== (workspace.wrapperId ?? "") ||
-      settingsDraft.promptText !== activePrompt.promptText ||
-      settingsDraft.changeNote !== (activePrompt.changeNote ?? "")
-    : false;
 
   if (loading) {
     return (
@@ -605,7 +636,7 @@ export function ExperimentDetailPage() {
     setSavingResult(true);
     const nextResultId = await createResultEntry({
       experimentId: workspace.id,
-      promptVersionId: activePrompt.id,
+      experimentVersionId: activePrompt.id,
       modelId: resultForm.modelId,
       htmlContent: resultForm.htmlContent,
       rating: null,
@@ -736,28 +767,48 @@ export function ExperimentDetailPage() {
     setSavingModel(false);
   };
 
-  const onSavePromptSettings = async () => {
-    if (!activePrompt) {
+  const onSaveTitle = async () => {
+    if (!workspace) {
       return;
     }
 
-    setSavingPromptSettings(true);
+    const nextTitle = titleDraft.trim();
+    if (!nextTitle || nextTitle === workspace.title) {
+      setTitleDraft(workspace.title);
+      setTitleEditMode(false);
+      return;
+    }
+
+    setSavingTitle(true);
     await updateExperimentEntry({
       experimentId: workspace.id,
-      title: settingsDraft.title,
-      description: settingsDraft.description,
-      categoryId: settingsDraft.categoryId || null,
-      wrapperId: settingsDraft.wrapperId || null,
+      title: nextTitle,
+      description: workspace.description,
+      categoryId: workspace.categoryId,
       tags: workspace.tags,
     });
-    await updatePromptVersionEntry({
-      promptVersionId: activePrompt.id,
-      promptText: settingsDraft.promptText,
-      changeNote: settingsDraft.changeNote,
+    await refreshWorkspace();
+    setSavingTitle(false);
+    setTitleEditMode(false);
+  };
+
+  const onSelectCategory = async (categoryId: string) => {
+    if (!workspace || categoryId === (workspace.categoryId ?? "")) {
+      setCategoryEditMode(false);
+      return;
+    }
+
+    setSavingCategory(true);
+    await updateExperimentEntry({
       experimentId: workspace.id,
+      title: workspace.title,
+      description: workspace.description,
+      categoryId: categoryId || null,
+      tags: workspace.tags,
     });
     await refreshWorkspace();
-    setSavingPromptSettings(false);
+    setSavingCategory(false);
+    setCategoryEditMode(false);
   };
 
   const onUseCatalogModel = async (catalogModelId: string) => {
@@ -801,20 +852,79 @@ export function ExperimentDetailPage() {
     setSavingModel(false);
   };
 
+  const startPromptVersionDraft = () => {
+    setVersionDraft({
+      wrapperId: activePrompt?.wrapperVersionId ?? "",
+      promptText: activePrompt?.promptText ?? "",
+      changeNote: "",
+    });
+    setVersionDraftMode(true);
+  };
+
+  const discardPromptVersionDraft = () => {
+    setVersionDraft({
+      wrapperId: activePrompt?.wrapperVersionId ?? "",
+      promptText: activePrompt?.promptText ?? "",
+      changeNote: "",
+    });
+    setVersionDraftMode(false);
+  };
+
   const onCreatePromptVersion = async () => {
     setCreatingVersion(true);
-    const nextPromptText = settingsDraft.promptText.trim();
+    const nextPromptText = versionDraft.promptText.trim();
     const nextChangeNote =
-      settingsDraft.changeNote.trim() || `Forked from v${activePrompt?.versionNumber ?? "?"}`;
+      versionDraft.changeNote.trim() || `Forked from v${activePrompt?.versionNumber ?? "?"}`;
 
     const promptVersionId = await createPromptVersionEntry({
       experimentId: workspace.id,
       promptText: nextPromptText,
+      wrapperVersionId: versionDraft.wrapperId || null,
       changeNote: nextChangeNote,
     });
     await refreshWorkspace();
     setSelectedVersionId(promptVersionId);
+    setVersionDraftMode(false);
     setCreatingVersion(false);
+  };
+
+  const onSaveSelectedVersion = async () => {
+    if (!workspace || !activePrompt) {
+      return;
+    }
+
+    setSavingVersion(true);
+    try {
+      if (activePrompt.resultCount === 0) {
+        await updateExperimentVersionEntry({
+          experimentVersionId: activePrompt.id,
+          experimentId: workspace.id,
+          promptText: versionDraft.promptText,
+          wrapperVersionId: versionDraft.wrapperId || null,
+          changeNote: versionDraft.changeNote,
+        });
+      } else {
+        await updateExperimentVersionChangeNote({
+          experimentVersionId: activePrompt.id,
+          experimentId: workspace.id,
+          changeNote: versionDraft.changeNote,
+        });
+      }
+
+      await refreshWorkspace();
+      setSelectedVersionId(activePrompt.id);
+    } finally {
+      setSavingVersion(false);
+    }
+  };
+
+  const onDeleteExperimentVersion = async (experimentVersionId: string) => {
+    setDeletingVersionId(experimentVersionId);
+    await deleteExperimentVersionEntry(experimentVersionId);
+    await refreshWorkspace();
+    setDeleteVersionTarget(null);
+    setDeletingVersionId(null);
+    setVersionDraftMode(false);
   };
 
   return (
@@ -830,13 +940,88 @@ export function ExperimentDetailPage() {
             Back to experiments
           </button>
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="truncate font-mono text-xl font-semibold tracking-[-0.04em] text-text">
-              {workspace.title}
-            </h1>
-            <span className="inline-flex items-center gap-2 rounded-full bg-white/5 px-2.5 py-1 text-xs text-muted">
-              <span className="h-2 w-2 rounded-full" style={{ backgroundColor: workspace.categoryColor }} />
-              {workspace.categoryName}
-            </span>
+            {titleEditMode ? (
+              <div className="flex min-w-0 flex-1 items-center gap-2">
+                <input
+                  className="h-10 min-w-0 flex-1 rounded-md border border-primary/50 bg-code px-3 font-mono text-xl font-semibold tracking-[-0.04em] text-text outline-none"
+                  value={titleDraft}
+                  onChange={(event) => setTitleDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void onSaveTitle();
+                    }
+                    if (event.key === "Escape") {
+                      setTitleDraft(workspace.title);
+                      setTitleEditMode(false);
+                    }
+                  }}
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border/80 bg-code text-muted transition hover:text-text"
+                  onClick={() => void onSaveTitle()}
+                  disabled={savingTitle}
+                  aria-label="Save title"
+                >
+                  <Check className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border/80 bg-code text-muted transition hover:text-text"
+                  onClick={() => {
+                    setTitleDraft(workspace.title);
+                    setTitleEditMode(false);
+                  }}
+                  disabled={savingTitle}
+                  aria-label="Cancel title edit"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="flex min-w-0 items-center gap-2">
+                  <h1 className="truncate font-mono text-xl font-semibold tracking-[-0.04em] text-text">
+                    {workspace.title}
+                  </h1>
+                  <button
+                    type="button"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted transition hover:bg-surface hover:text-text"
+                    onClick={() => setTitleEditMode(true)}
+                    aria-label="Edit experiment title"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </button>
+                </div>
+                {categoryEditMode ? (
+                  <Select
+                    wrapperClassName="min-w-[220px]"
+                    value={workspace.categoryId ?? ""}
+                    onChange={(event) => void onSelectCategory(event.target.value)}
+                    className="h-9 rounded-full bg-white/5 pl-3 pr-10 text-xs"
+                    disabled={savingCategory}
+                  >
+                    <option value="">No category</option>
+                    {categoryOptions.map((option) => (
+                      <option key={option.id} value={option.id}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </Select>
+                ) : (
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-2 rounded-full bg-white/5 px-2.5 py-1 text-xs text-muted transition hover:bg-white/10 hover:text-text"
+                    onClick={() => setCategoryEditMode(true)}
+                  >
+                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: workspace.categoryColor }} />
+                    {workspace.categoryName}
+                  </button>
+                )}
+              </>
+            )}
           </div>
           <p className="mt-2 max-w-3xl text-sm text-muted">{workspace.description}</p>
         </div>
@@ -919,7 +1104,7 @@ export function ExperimentDetailPage() {
               <div>
                 <div className="font-mono text-xs uppercase tracking-[0.12em] text-dim">Results</div>
                 <div className="mt-1 text-sm text-muted">
-                  Prompt version v{activePrompt?.versionNumber ?? "-"}
+                  Experiment version v{activePrompt?.versionNumber ?? "-"}
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -1035,7 +1220,7 @@ export function ExperimentDetailPage() {
                 })
               ) : (
                 <div className="rounded-lg border border-dashed border-border/80 bg-surface/30 px-4 py-6 text-sm text-muted">
-                  No results yet for v{activePrompt?.versionNumber ?? "-"}.
+                  No results yet for experiment version v{activePrompt?.versionNumber ?? "-"}.
                 </div>
               )}
             </div>
@@ -1181,7 +1366,7 @@ export function ExperimentDetailPage() {
                 <div className="w-full max-w-xl rounded-xl border border-dashed border-border/80 bg-surface/60 p-8 text-center shadow-panel">
                   <div className="font-mono text-xs uppercase tracking-[0.14em] text-dim">Empty results</div>
                   <h2 className="mt-3 font-mono text-2xl font-semibold text-text">
-                    No results for v{activePrompt?.versionNumber ?? "-"} yet
+                    No results for experiment version v{activePrompt?.versionNumber ?? "-"} yet
                   </h2>
                   <p className="mt-3 text-sm leading-6 text-muted">
                     Copy the prompt for the current version, run it in an external LLM chat, then add the generated HTML result here.
@@ -1202,144 +1387,213 @@ export function ExperimentDetailPage() {
           </section>
         </div>
       ) : (
-        <div className="grid gap-6 p-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-          <section className="space-y-4">
-            <div className="flex flex-wrap gap-2">
-              {workspace.promptVersions.map((version) => (
-                <button
-                  key={version.id}
-                  type="button"
-                  onClick={() => setSelectedVersionId(version.id)}
-                  className={cn(
-                    "rounded-full border px-3 py-1.5 font-mono text-xs transition",
-                    selectedVersionId === version.id
-                      ? "border-primary bg-primary-soft/50 text-primary"
-                      : "border-border/80 text-muted hover:text-text",
-                  )}
-                >
-                  v{version.versionNumber}
-                </button>
-              ))}
-              <button
-                type="button"
-                className="rounded-full border border-dashed border-border/80 px-3 py-1.5 font-mono text-xs text-dim transition hover:text-text disabled:opacity-50"
-                onClick={() => void onCreatePromptVersion()}
-                disabled={creatingVersion}
-              >
-                + New version
-              </button>
-            </div>
-
-            <div className="rounded-lg border border-border/80 bg-code p-4">
-              <div className="mb-2 font-mono text-xs uppercase tracking-[0.12em] text-dim">Prompt text</div>
-              <div className="grid min-h-[320px] grid-cols-[52px_minmax(0,1fr)] overflow-hidden rounded-lg border border-border/80 bg-[#050608]">
-                <div className="border-r border-border/80 bg-black/20 px-3 py-3 text-right font-mono text-xs leading-6 text-dim">
-                  {promptLineNumbers.map((line) => (
-                    <div key={line}>{line}</div>
-                  ))}
-                </div>
-                <textarea
-                  className="min-h-[320px] w-full resize-y bg-transparent px-4 py-3 font-mono text-sm leading-6 text-text outline-none"
-                  value={settingsDraft.promptText}
-                  onChange={(event) =>
-                    setSettingsDraft((current) => ({ ...current, promptText: event.target.value }))
-                  }
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
-                Change note
-              </div>
-              <InputLike
-                value={settingsDraft.changeNote}
-                onChange={(value) =>
-                  setSettingsDraft((current) => ({ ...current, changeNote: value }))
-                }
-                placeholder="What changed from the previous version"
-              />
-            </div>
-
-            <div className="flex justify-end">
-              <Button onClick={() => void onSavePromptSettings()} disabled={savingPromptSettings || !promptSettingsDirty}>
-                <Save className="h-4 w-4" />
-                Save changes
+        <div className="grid gap-5 p-5 xl:grid-cols-[280px_minmax(0,1fr)]">
+          <aside className="space-y-4 rounded-xl border border-border/80 bg-surface/70 p-4 shadow-panel">
+            <div className="flex items-center justify-between gap-3">
+              <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Versions</div>
+              <Button variant="ghost" size="sm" onClick={startPromptVersionDraft} disabled={creatingVersion}>
+                <Plus className="h-4 w-4" />
+                New version
               </Button>
             </div>
-          </section>
-
-          <aside className="space-y-4">
-            <div className="rounded-lg border border-border/80 bg-raised p-4">
-              <button
-                type="button"
-                className="flex w-full items-center justify-between gap-3 text-left"
-                onClick={() => setShowExperimentSettings((value) => !value)}
-              >
-                <div>
-                  <div className="font-mono text-xs uppercase tracking-[0.12em] text-dim">Experiment settings</div>
-                  <div className="mt-1 text-sm text-muted">Metadata, wrapper and category configuration.</div>
+            <div className="space-y-2">
+              {workspace.promptVersions.map((version) => (
+                <div
+                  key={version.id}
+                  className={cn(
+                    "rounded-lg border px-3 py-3 transition",
+                    selectedVersionId === version.id
+                      ? "border-primary/60 bg-primary-soft/20"
+                      : "border-border/80 bg-code/40 hover:border-primary/40 hover:bg-code/70",
+                  )}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <button
+                      type="button"
+                      className="min-w-0 flex-1 text-left"
+                      onClick={() => {
+                        setSelectedVersionId(version.id);
+                        setVersionDraftMode(false);
+                      }}
+                    >
+                      <div className="font-mono text-sm text-text">v{version.versionNumber}</div>
+                      <div className="mt-1 text-xs text-muted">
+                        {version.resultCount} result{version.resultCount === 1 ? "" : "s"}
+                      </div>
+                      <div className="mt-2 text-sm text-muted">
+                        {version.changeNote || "No change note"}
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      className="mt-0.5 text-muted transition hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-30"
+                      onClick={() => setDeleteVersionTarget({ id: version.id, versionNumber: version.versionNumber })}
+                      disabled={version.resultCount > 0 || workspace.promptVersions.length <= 1}
+                      aria-label={`Delete experiment version v${version.versionNumber}`}
+                      title={
+                        version.resultCount > 0
+                          ? "Used by saved results"
+                          : workspace.promptVersions.length <= 1
+                            ? "Cannot delete the last remaining version"
+                            : "Delete unused version"
+                      }
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
-                <ChevronDown className={cn("h-4 w-4 text-muted transition", showExperimentSettings && "rotate-180")} />
-              </button>
-              {showExperimentSettings ? (
-                <div className="mt-4 space-y-4">
-                  <Field
-                    label="Title"
-                    value={settingsDraft.title}
-                    onChange={(value) =>
-                      setSettingsDraft((current) => ({ ...current, title: value }))
-                    }
-                  />
-                  <Field
-                    label="Description"
-                    value={settingsDraft.description}
-                    onChange={(value) =>
-                      setSettingsDraft((current) => ({ ...current, description: value }))
-                    }
-                    multiline
-                  />
+              ))}
+            </div>
+          </aside>
+
+          <section className="space-y-4">
+            <div className="rounded-lg border border-border/80 bg-code p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="font-mono text-xs uppercase tracking-[0.12em] text-dim">
+                    {versionDraftMode ? "New version draft" : "Selected version"}
+                  </div>
+                  <div className="mt-1 text-sm text-muted">
+                    {versionDraftMode
+                      ? "Draft changes stay local until you explicitly create a new experiment version."
+                      : canEditSelectedVersionFields
+                        ? `Version v${activePrompt?.versionNumber ?? "-"} has no linked results yet, so prompt, wrapper, and change note can still be edited in place.`
+                        : `Version v${activePrompt?.versionNumber ?? "-"} already has linked results, so only change note stays editable.`}
+                  </div>
+                </div>
+                {!versionDraftMode ? (
+                  <div className="text-xs text-muted">{canEditSelectedVersionFields ? "Editable" : "Note only"}</div>
+                ) : null}
+              </div>
+
+              <div className="mt-4">
+                <div className="mb-2 font-mono text-xs uppercase tracking-[0.12em] text-dim">Prompt text</div>
+                <div className="grid min-h-[320px] grid-cols-[52px_minmax(0,1fr)] overflow-hidden rounded-lg border border-border/80 bg-[#050608]">
+                  <div className="border-r border-border/80 bg-black/20 px-3 py-3 text-right font-mono text-xs leading-6 text-dim">
+                    {promptLineNumbers.map((line) => (
+                      <div key={line}>{line}</div>
+                    ))}
+                  </div>
+                  {versionDraftMode || canEditSelectedVersionFields ? (
+                    <textarea
+                      className="min-h-[320px] w-full resize-y bg-transparent px-4 py-3 font-mono text-sm leading-6 text-text outline-none"
+                      value={versionDraft.promptText}
+                      onChange={(event) =>
+                        setVersionDraft((current) => ({ ...current, promptText: event.target.value }))
+                      }
+                    />
+                  ) : (
+                    <pre className="min-h-[320px] whitespace-pre-wrap px-4 py-3 font-mono text-sm leading-6 text-text">
+                      {activePrompt?.promptText ?? ""}
+                    </pre>
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                {versionDraftMode || canEditSelectedVersionFields ? (
                   <SelectField
-                    label="Wrapper"
-                    value={settingsDraft.wrapperId}
+                    label="Wrapper version"
+                    value={versionDraft.wrapperId}
                     options={wrapperOptions}
                     emptyLabel="No wrapper"
                     onChange={(value) =>
-                      setSettingsDraft((current) => ({ ...current, wrapperId: value }))
+                      setVersionDraft((current) => ({ ...current, wrapperId: value }))
                     }
                   />
-                  <SelectField
-                    label="Category"
-                    value={settingsDraft.categoryId}
-                    options={categoryOptions}
-                    emptyLabel="No category"
-                    onChange={(value) =>
-                      setSettingsDraft((current) => ({ ...current, categoryId: value }))
-                    }
-                  />
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <ReadOnlyField label="Experiment created" value={formatLongDate(workspace.createdAt)} />
-                    <ReadOnlyField label="Experiment updated" value={formatLongDate(workspace.updatedAt)} />
-                    <ReadOnlyField label="Prompt version created" value={formatLongDate(activePrompt?.createdAt ?? "")} />
-                    <ReadOnlyField label="Current version" value={`v${activePrompt?.versionNumber ?? "-"}`} />
-                  </div>
+                ) : (
                   <div>
-                    <div className="mb-1 font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Wrapper preview</div>
-                    <pre className="max-h-[220px] overflow-auto whitespace-pre-wrap rounded-lg border border-border/80 bg-code p-3 font-mono text-xs leading-5 text-muted">
-                      {settingsDraft.wrapperId
-                        ? settingsDraft.wrapperId === workspace.wrapperId
-                          ? buildPromptForClipboard(settingsDraft.promptText ?? "", workspace.wrapperTemplate || "")
-                          : "Wrapper preview updates after save."
-                        : buildPromptForClipboard(settingsDraft.promptText ?? "", null)}
-                    </pre>
+                    <div className="mb-1 font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Wrapper</div>
+                    <div className="rounded-lg border border-border/80 bg-code px-3 py-2 text-sm text-muted">
+                      {activePrompt?.wrapperVersionId
+                        ? `${activePrompt.wrapperName} v${activePrompt.wrapperVersionNumber ?? "?"}`
+                        : "No wrapper"}
+                    </div>
                   </div>
+                )}
+
+                {versionDraftMode || canEditSelectedVersionNote ? (
+                  <div className="space-y-2">
+                    <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Change note</div>
+                    <InputLike
+                      value={versionDraft.changeNote}
+                      onChange={(value) =>
+                        setVersionDraft((current) => ({ ...current, changeNote: value }))
+                      }
+                      placeholder="What changed from the previous version"
+                    />
+                  </div>
+                ) : (
+                  <div>
+                    <div className="mb-1 font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Change note</div>
+                    <div className="rounded-lg border border-border/80 bg-code px-3 py-2 text-sm text-muted">
+                      {activePrompt?.changeNote || "No change note"}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-4">
+                <div className="mb-1 font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
+                  {versionDraftMode
+                    ? "Draft composed prompt preview"
+                    : canEditSelectedVersionFields
+                      ? "Live composed prompt preview"
+                      : "Saved version composed prompt preview"}
                 </div>
-              ) : null}
+                <pre className="max-h-[220px] overflow-auto whitespace-pre-wrap rounded-lg border border-border/80 bg-[#050608] p-3 font-mono text-xs leading-5 text-muted">
+                  {previewComposedPrompt}
+                </pre>
+              </div>
+
+              {versionDraftMode ? (
+                <div className="mt-4 flex justify-end gap-2">
+                  <Button variant="ghost" onClick={discardPromptVersionDraft}>
+                    Discard draft
+                  </Button>
+                  <Button onClick={() => void onCreatePromptVersion()} disabled={creatingVersion || !versionDraft.promptText.trim()}>
+                    <Plus className="h-4 w-4" />
+                    Create version
+                  </Button>
+                </div>
+              ) : (
+                <div className="mt-4 flex justify-end">
+                  <Button
+                    onClick={() => void onSaveSelectedVersion()}
+                    disabled={
+                      savingVersion ||
+                      !selectedVersionDirty ||
+                      (canEditSelectedVersionFields && !versionDraft.promptText.trim())
+                    }
+                  >
+                    <Save className="h-4 w-4" />
+                    {selectedVersionHasResults ? "Save note" : "Save version"}
+                  </Button>
+                </div>
+              )}
             </div>
-          </aside>
+          </section>
         </div>
       )}
       </div>
+
+      <ConfirmDialog
+        open={deleteVersionTarget !== null}
+        title={deleteVersionTarget ? `Delete version v${deleteVersionTarget.versionNumber}?` : "Delete version?"}
+        description="Only versions with no saved results can be deleted. The last remaining experiment version cannot be removed."
+        confirmLabel="Delete version"
+        onCancel={() => {
+          if (!deletingVersionId) {
+            setDeleteVersionTarget(null);
+          }
+        }}
+        onConfirm={() => {
+          if (deleteVersionTarget) {
+            void onDeleteExperimentVersion(deleteVersionTarget.id);
+          }
+        }}
+        busy={deleteVersionTarget !== null && deletingVersionId === deleteVersionTarget.id}
+      />
 
       {showAddResult ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
@@ -1351,7 +1605,7 @@ export function ExperimentDetailPage() {
               <div>
                 <h2 className="font-mono text-xl font-semibold text-text">Add result</h2>
                 <p className="mt-1 text-sm text-muted">
-                  Attach HTML output to prompt version v{activePrompt?.versionNumber ?? "-"}.
+                  Attach HTML output to experiment version v{activePrompt?.versionNumber ?? "-"}.
                 </p>
               </div>
               <button
@@ -1376,7 +1630,11 @@ export function ExperimentDetailPage() {
                       <span className="rounded-full bg-primary-soft/50 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-primary">
                         v{activePrompt?.versionNumber ?? "-"}
                       </span>
-                      <span>{workspace.wrapperName}</span>
+                      <span>
+                        {activePrompt?.wrapperVersionId
+                          ? `${activePrompt.wrapperName} v${activePrompt.wrapperVersionNumber ?? "?"}`
+                          : "No wrapper"}
+                      </span>
                     </div>
                   </div>
                   <Button type="button" variant="ghost" onClick={() => void copyPrompt()}>
@@ -1388,7 +1646,7 @@ export function ExperimentDetailPage() {
                   Send this prompt to the LLM chat, then come back with the generated HTML.
                 </p>
                 <pre className="mt-3 max-h-[160px] overflow-auto whitespace-pre-wrap rounded-lg border border-border/80 bg-[#050608] p-3 font-mono text-xs leading-5 text-muted">
-                  {composedPrompt || "Select a prompt version first."}
+                  {composedPrompt || "Select an experiment version first."}
                 </pre>
               </section>
 
@@ -1554,7 +1812,7 @@ export function ExperimentDetailPage() {
               <div>
                 <h2 className="font-mono text-xl font-semibold text-text">Delete result</h2>
                 <p className="mt-1 text-sm text-muted">
-                  This will permanently remove the selected result from the current prompt version.
+                  This will permanently remove the selected result from the current experiment version.
                 </p>
               </div>
               <button
@@ -2320,46 +2578,6 @@ function RatingStars({
   );
 }
 
-function Field({
-  label,
-  value,
-  onChange,
-  multiline = false,
-}: {
-  label: string;
-  value: string;
-  onChange?: (value: string) => void;
-  multiline?: boolean;
-}) {
-  return (
-    <div>
-      <div className="mb-1 font-mono text-[11px] uppercase tracking-[0.12em] text-dim">{label}</div>
-      {multiline ? (
-        <textarea
-          className="min-h-[100px] w-full rounded-lg border border-border/80 bg-code px-3 py-2 text-sm text-text outline-none focus:border-primary"
-          value={value}
-          onChange={(event) => onChange?.(event.target.value)}
-        />
-      ) : (
-        <input
-          className="h-10 w-full rounded-lg border border-border/80 bg-code px-3 text-sm text-text outline-none focus:border-primary"
-          value={value}
-          onChange={(event) => onChange?.(event.target.value)}
-        />
-      )}
-    </div>
-  );
-}
-
-function ReadOnlyField({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <div className="mb-1 font-mono text-[11px] uppercase tracking-[0.12em] text-dim">{label}</div>
-      <div className="rounded-lg border border-border/80 bg-code px-3 py-2 text-sm text-muted">{value}</div>
-    </div>
-  );
-}
-
 function SelectField({
   label,
   value,
@@ -2390,18 +2608,4 @@ function SelectField({
       </Select>
     </div>
   );
-}
-
-function formatLongDate(value: string) {
-  if (!value) {
-    return "—";
-  }
-
-  return new Date(value).toLocaleString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 }

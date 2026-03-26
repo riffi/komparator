@@ -8,7 +8,7 @@ export type ExperimentListItem = {
   categoryName: string;
   categoryColor: string;
   tags: string[];
-  promptCount: number;
+  versionCount: number;
   resultCount: number;
   avgRating: number | null;
   createdAt: string;
@@ -54,10 +54,18 @@ export type CategoryRecord = {
 export type WrapperRecord = {
   id: string;
   name: string;
-  template: string;
   isDefault: boolean;
   createdAt: string;
   updatedAt: string;
+};
+
+export type WrapperVersionRecord = {
+  id: string;
+  wrapperId: string;
+  versionNumber: number;
+  template: string;
+  changeNote: string;
+  createdAt: string;
 };
 
 export type ExperimentRecord = {
@@ -65,19 +73,24 @@ export type ExperimentRecord = {
   title: string;
   description: string;
   categoryId: string | null;
-  wrapperId: string | null;
   tags: string[];
   createdAt: string;
   updatedAt: string;
+  wrapperId?: string | null;
 };
 
-export type PromptVersionRecord = {
+export type ExperimentVersionRecord = {
   id: string;
   experimentId: string;
   versionNumber: number;
   promptText: string;
+  wrapperVersionId: string | null;
   changeNote: string;
   createdAt: string;
+};
+
+export type PromptVersionRecord = ExperimentVersionRecord & {
+  wrapperVersionId?: string | null;
 };
 
 export type ProviderRecord = {
@@ -157,27 +170,34 @@ export type ModelMatchRecord = {
 
 export type ResultRecord = {
   id: string;
-  promptVersionId: string;
+  experimentVersionId: string;
   modelId: string;
   attempt: number;
+  composedPromptSnapshot: string;
+  promptTextSnapshot: string;
+  wrapperVersionId: string | null;
+  wrapperNameSnapshot: string | null;
+  wrapperTemplateSnapshot: string | null;
   htmlContent: string;
   rating: number | null;
   notes: string;
   fileSizeBytes: number;
   lineCount: number;
   createdAt: string;
+  promptVersionId?: string;
 };
 
 export type StatsWorkspaceRecord = {
   id: "workspace";
   experimentsCount: number;
-  promptVersionsCount: number;
+  experimentVersionsCount: number;
   resultsCount: number;
   ratedResultsCount: number;
   usedModelsCount: number;
   providersCount: number;
   ratingSum: number;
   updatedAt: string;
+  promptVersionsCount?: number;
 };
 
 export type StatsModelRecord = {
@@ -206,22 +226,35 @@ export type WorkspaceResultItem = {
   modelName: string;
   modelVersion: string;
   modelComment: string;
+  experimentVersionId: string;
+  experimentVersionNumber: number;
   promptVersionNumber: number;
   attempt: number;
   rating: number | null;
   notes: string;
+  composedPromptSnapshot: string;
+  promptTextSnapshot: string;
+  wrapperVersionId: string | null;
+  wrapperName: string;
+  wrapperVersionNumber: number | null;
+  wrapperTemplateSnapshot: string | null;
   fileSizeBytes: number;
   lineCount: number;
   createdAt: string;
   createdLabel: string;
 };
 
-export type WorkspacePromptVersion = {
+export type WorkspaceExperimentVersion = {
   id: string;
   versionNumber: number;
   promptText: string;
+  wrapperVersionId: string | null;
+  wrapperName: string;
+  wrapperVersionNumber: number | null;
+  wrapperTemplate: string;
   changeNote: string;
   createdAt: string;
+  resultCount: number;
 };
 
 export type ExperimentWorkspace = {
@@ -232,12 +265,10 @@ export type ExperimentWorkspace = {
   categoryName: string;
   categoryColor: string;
   tags: string[];
-  wrapperId: string | null;
-  wrapperName: string;
-  wrapperTemplate: string;
   createdAt: string;
   updatedAt: string;
-  promptVersions: WorkspacePromptVersion[];
+  versions: WorkspaceExperimentVersion[];
+  promptVersions: WorkspaceExperimentVersion[];
   results: WorkspaceResultItem[];
 };
 

@@ -26,7 +26,7 @@ type ExperimentCreateForm = {
   title: string;
   description: string;
   categoryId: string;
-  wrapperId: string;
+  wrapperVersionId: string;
   promptText: string;
   changeNote: string;
 };
@@ -60,7 +60,7 @@ export function ExperimentsPage() {
     title: "",
     description: "",
     categoryId: "",
-    wrapperId: "",
+    wrapperVersionId: "",
     promptText: "",
     changeNote: "",
   });
@@ -153,7 +153,7 @@ export function ExperimentsPage() {
       title: form.title.trim(),
       description: form.description.trim(),
       categoryId: form.categoryId || null,
-      wrapperId: form.wrapperId || null,
+      wrapperVersionId: form.wrapperVersionId || null,
       tags: [],
       promptText: form.promptText,
       changeNote: "",
@@ -165,7 +165,7 @@ export function ExperimentsPage() {
       title: "",
       description: "",
       categoryId: "",
-      wrapperId: "",
+      wrapperVersionId: "",
       promptText: "",
       changeNote: "",
     });
@@ -354,13 +354,13 @@ export function ExperimentsPage() {
 
                   <label className="space-y-2">
                     <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
-                      Wrapper
+                      Wrapper version
                     </span>
                     <Select
                       wrapperClassName="w-full"
-                      value={form.wrapperId}
+                      value={form.wrapperVersionId}
                       onChange={(event) =>
-                        setForm((current) => ({ ...current, wrapperId: event.target.value }))
+                        setForm((current) => ({ ...current, wrapperVersionId: event.target.value }))
                       }
                     >
                       <option value="">No wrapper</option>
@@ -375,7 +375,7 @@ export function ExperimentsPage() {
               ) : null}
 
               <div className="rounded-lg border border-border/80 bg-surface/40 px-4 py-3 text-sm text-muted md:col-span-2">
-                Description, category, wrapper, and future prompt version notes can all be adjusted later from the
+                Description, category, wrapper choice, and future version notes can all be adjusted later from the
                 experiment screen.
               </div>
             </div>

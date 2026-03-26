@@ -1,6 +1,6 @@
 # Komparator
 
-![Komparator preview](./readme_image.jpg)
+![Komparator preview](./readme_image.png)
 
 ✨ `Komparator` is a local app for comparing HTML results from different LLMs on the same prompt.
 

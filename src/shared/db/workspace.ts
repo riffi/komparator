@@ -6,6 +6,7 @@ import {
   CatalogProviderRecord,
   CatalogStateRecord,
   CatalogSummary,
+  ExperimentVersionRecord,
   ExperimentListItem,
   ExperimentsPageInput,
   ExperimentsPageResult,
@@ -19,7 +20,9 @@ import {
   StatsWorkspaceRecord,
   WorkspaceResultItem,
   WrapperRecord,
+  WrapperVersionRecord,
 } from "@/entities/experiment/model/types";
+import { buildPromptForClipboard } from "@/shared/lib/prompt";
 import { builtInModelCatalog, CatalogImportPayload } from "@/shared/db/model-catalog";
 
 const MODEL_CATALOG_URL = "/catalog/models.json";
@@ -34,6 +37,12 @@ export type SidebarCategoryItem = {
 export type SelectOption = {
   id: string;
   label: string;
+};
+
+export type WrapperSelectOption = SelectOption & {
+  template: string;
+  wrapperName: string;
+  versionNumber: number;
 };
 
 export type ModelSelectOption = {
@@ -127,10 +136,36 @@ export type WrapperManagerItem = {
   id: string;
   name: string;
   template: string;
+  latestVersionId: string;
+  latestVersionNumber: number;
   isDefault: boolean;
   usageCount: number;
   updatedAt: string;
   updatedLabel: string;
+};
+
+export type WrapperDetailVersionItem = {
+  id: string;
+  versionNumber: number;
+  template: string;
+  changeNote: string;
+  createdAt: string;
+  createdLabel: string;
+  usageCount: number;
+  isLatest: boolean;
+};
+
+export type WrapperDetailData = {
+  id: string;
+  name: string;
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
+  updatedLabel: string;
+  latestVersionId: string;
+  latestVersionNumber: number;
+  usageCount: number;
+  versions: WrapperDetailVersionItem[];
 };
 
 export type StatsSummaryCard = {
@@ -263,6 +298,19 @@ function getLocalModelLabel(model: ModelRecord, providerName: string, catalogDis
   const baseName = catalogDisplayName ?? `${model.name} ${model.version}`.trim();
   const commentPart = model.comment ? ` • ${model.comment}` : "";
   return `${providerName} / ${baseName}${commentPart}`;
+}
+
+function getLatestWrapperVersions(wrapperVersions: WrapperVersionRecord[]) {
+  const latestByWrapperId = new Map<string, WrapperVersionRecord>();
+
+  for (const version of wrapperVersions) {
+    const current = latestByWrapperId.get(version.wrapperId);
+    if (!current || version.versionNumber > current.versionNumber) {
+      latestByWrapperId.set(version.wrapperId, version);
+    }
+  }
+
+  return latestByWrapperId;
 }
 
 export async function ensureCatalogReady() {
@@ -481,16 +529,16 @@ async function fetchRemoteCatalogPayload() {
 }
 
 async function rebuildStatsAggregates() {
-  const [experiments, promptVersions, providers, models, results] = await Promise.all([
+  const [experiments, experimentVersions, providers, models, results] = await Promise.all([
     db.experiments.toArray(),
-    db.promptVersions.toArray(),
+    db.experimentVersions.toArray(),
     db.providers.toArray(),
     db.models.toArray(),
     db.results.toArray(),
   ]);
 
   const now = new Date().toISOString();
-  const promptVersionsById = new Map(promptVersions.map((item) => [item.id, item]));
+  const experimentVersionsById = new Map(experimentVersions.map((item) => [item.id, item]));
   const modelsById = new Map(models.map((item) => [item.id, item]));
   const resultsByModelId = new Map<string, typeof results>();
   const modelStats = new Map<string, StatsModelRecord>();
@@ -537,11 +585,11 @@ async function rebuildStatsAggregates() {
       providerRecord.ratedCount += 1;
       providerRecord.ratingSum += result.rating;
 
-      const promptVersion = promptVersionsById.get(result.promptVersionId);
-      if (promptVersion) {
-        const winnerRecord = experimentWinners.get(promptVersion.experimentId);
+      const experimentVersion = experimentVersionsById.get(result.experimentVersionId);
+      if (experimentVersion) {
+        const winnerRecord = experimentWinners.get(experimentVersion.experimentId);
         if (!winnerRecord || result.rating > winnerRecord.topRating) {
-          experimentWinners.set(promptVersion.experimentId, {
+          experimentWinners.set(experimentVersion.experimentId, {
             topRating: result.rating,
             modelIds: new Set([model.id]),
           });
@@ -559,9 +607,9 @@ async function rebuildStatsAggregates() {
     const experimentsParticipated = new Set<string>();
 
     for (const result of resultsByModelId.get(model.id) ?? []) {
-      const promptVersion = promptVersionsById.get(result.promptVersionId);
-      if (promptVersion) {
-        experimentsParticipated.add(promptVersion.experimentId);
+      const experimentVersion = experimentVersionsById.get(result.experimentVersionId);
+      if (experimentVersion) {
+        experimentsParticipated.add(experimentVersion.experimentId);
       }
     }
 
@@ -590,7 +638,7 @@ async function rebuildStatsAggregates() {
   const workspaceRecord: StatsWorkspaceRecord = {
     id: "workspace",
     experimentsCount: experiments.length,
-    promptVersionsCount: promptVersions.length,
+    experimentVersionsCount: experimentVersions.length,
     resultsCount: results.length,
     ratedResultsCount,
     usedModelsCount: new Set(results.map((item) => item.modelId)).size,
@@ -895,13 +943,39 @@ export async function loadCategoryOptions(): Promise<SelectOption[]> {
   }));
 }
 
-export async function loadWrapperOptions(): Promise<SelectOption[]> {
-  const wrappers = await db.wrappers.orderBy("updatedAt").reverse().toArray();
+export async function loadWrapperOptions(): Promise<WrapperSelectOption[]> {
+  const [wrappers, wrapperVersions] = await Promise.all([
+    db.wrappers.orderBy("updatedAt").reverse().toArray(),
+    db.wrapperVersions.toArray(),
+  ]);
+  const wrappersById = new Map(wrappers.map((wrapper) => [wrapper.id, wrapper]));
 
-  return wrappers.map((wrapper) => ({
-    id: wrapper.id,
-    label: wrapper.name,
-  }));
+  return [...wrapperVersions]
+    .sort((left, right) => {
+      const leftWrapper = wrappersById.get(left.wrapperId);
+      const rightWrapper = wrappersById.get(right.wrapperId);
+
+      return (
+        Date.parse(rightWrapper?.updatedAt ?? right.createdAt) - Date.parse(leftWrapper?.updatedAt ?? left.createdAt) ||
+        (right.versionNumber - left.versionNumber) ||
+        (leftWrapper?.name ?? "").localeCompare(rightWrapper?.name ?? "")
+      );
+    })
+    .map((version) => {
+      const wrapper = wrappersById.get(version.wrapperId);
+      if (!wrapper) {
+        return null;
+      }
+
+      return {
+        id: version.id,
+        label: `${wrapper.name} v${version.versionNumber}`,
+        template: version.template,
+        wrapperName: wrapper.name,
+        versionNumber: version.versionNumber,
+      } satisfies WrapperSelectOption;
+    })
+    .filter((item): item is WrapperSelectOption => item !== null);
 }
 
 export async function loadModelOptions(): Promise<ModelSelectOption[]> {
@@ -1186,62 +1260,176 @@ export async function deleteModelEntry(modelId: string) {
 }
 
 export async function loadWrappersCatalog(): Promise<WrapperManagerItem[]> {
-  const [wrappers, experiments] = await Promise.all([db.wrappers.toArray(), db.experiments.toArray()]);
+  const [wrappers, wrapperVersions, experimentVersions] = await Promise.all([
+    db.wrappers.toArray(),
+    db.wrapperVersions.toArray(),
+    db.experimentVersions.toArray(),
+  ]);
+  const latestByWrapperId = getLatestWrapperVersions(wrapperVersions);
+  const wrapperVersionsById = new Map(wrapperVersions.map((item) => [item.id, item]));
   const counts = new Map<string, number>();
 
-  for (const experiment of experiments) {
-    if (experiment.wrapperId) {
-      counts.set(experiment.wrapperId, (counts.get(experiment.wrapperId) ?? 0) + 1);
+  for (const version of experimentVersions) {
+    if (version.wrapperVersionId) {
+      const wrapperVersion = wrapperVersionsById.get(version.wrapperVersionId);
+      if (wrapperVersion) {
+        counts.set(wrapperVersion.wrapperId, (counts.get(wrapperVersion.wrapperId) ?? 0) + 1);
+      }
     }
   }
 
   return [...wrappers]
     .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))
-    .map((wrapper) => ({
-      id: wrapper.id,
-      name: wrapper.name,
-      template: wrapper.template,
-      isDefault: wrapper.isDefault,
-      usageCount: counts.get(wrapper.id) ?? 0,
-      updatedAt: wrapper.updatedAt,
-      updatedLabel: formatUpdatedLabel(wrapper.updatedAt),
+    .map((wrapper) => {
+      const latest = latestByWrapperId.get(wrapper.id);
+      if (!latest) {
+        return null;
+      }
+
+      return {
+        id: wrapper.id,
+        name: wrapper.name,
+        template: latest.template,
+        latestVersionId: latest.id,
+        latestVersionNumber: latest.versionNumber,
+        isDefault: wrapper.isDefault,
+        usageCount: counts.get(wrapper.id) ?? 0,
+        updatedAt: wrapper.updatedAt,
+        updatedLabel: formatUpdatedLabel(wrapper.updatedAt),
+      } satisfies WrapperManagerItem;
+    })
+    .filter((item): item is WrapperManagerItem => item !== null);
+}
+
+export async function loadWrapperDetail(wrapperId: string): Promise<WrapperDetailData> {
+  const [wrapper, versions, experimentVersions] = await Promise.all([
+    db.wrappers.get(wrapperId),
+    db.wrapperVersions.where("wrapperId").equals(wrapperId).toArray(),
+    db.experimentVersions.toArray(),
+  ]);
+
+  if (!wrapper) {
+    throw new Error("Wrapper not found.");
+  }
+
+  if (versions.length === 0) {
+    throw new Error("Wrapper has no versions.");
+  }
+
+  const usageByVersionId = new Map<string, number>();
+  for (const experimentVersion of experimentVersions) {
+    if (experimentVersion.wrapperVersionId) {
+      usageByVersionId.set(
+        experimentVersion.wrapperVersionId,
+        (usageByVersionId.get(experimentVersion.wrapperVersionId) ?? 0) + 1,
+      );
+    }
+  }
+
+  const latest = versions.reduce((current, item) =>
+    item.versionNumber > current.versionNumber ? item : current,
+  );
+
+  const versionItems = [...versions]
+    .sort((left, right) => right.versionNumber - left.versionNumber)
+    .map((version) => ({
+      id: version.id,
+      versionNumber: version.versionNumber,
+      template: version.template,
+      changeNote: version.changeNote,
+      createdAt: version.createdAt,
+      createdLabel: formatCreatedLabel(version.createdAt),
+      usageCount: usageByVersionId.get(version.id) ?? 0,
+      isLatest: version.id === latest.id,
     }));
+
+  return {
+    id: wrapper.id,
+    name: wrapper.name,
+    isDefault: wrapper.isDefault,
+    createdAt: wrapper.createdAt,
+    updatedAt: wrapper.updatedAt,
+    updatedLabel: formatUpdatedLabel(wrapper.updatedAt),
+    latestVersionId: latest.id,
+    latestVersionNumber: latest.versionNumber,
+    usageCount: versionItems.reduce((sum, item) => sum + item.usageCount, 0),
+    versions: versionItems,
+  };
 }
 
 export async function createWrapperEntry(input: {
   name: string;
   template: string;
   isDefault: boolean;
+  changeNote?: string;
 }) {
   const now = new Date().toISOString();
   const name = input.name.trim();
   const template = input.template;
+  const wrapperId = crypto.randomUUID();
+
+  if (!name) {
+    throw new Error("Wrapper name is required.");
+  }
 
   if (!template.includes("{{prompt}}")) {
     throw new Error("Wrapper template must contain {{prompt}}.");
   }
 
-  await db.transaction("rw", [db.wrappers], async () => {
+  await db.transaction("rw", [db.wrappers, db.wrapperVersions], async () => {
     if (input.isDefault) {
       await db.wrappers.toCollection().modify({ isDefault: false, updatedAt: now });
     }
 
-    await db.wrappers.add({
+      await db.wrappers.add({
+        id: wrapperId,
+        name,
+        isDefault: input.isDefault,
+        createdAt: now,
+      updatedAt: now,
+    });
+    await db.wrapperVersions.add({
       id: crypto.randomUUID(),
-      name,
+      wrapperId,
+      versionNumber: 1,
       template,
+      changeNote: input.changeNote?.trim() ?? "",
+        createdAt: now,
+      });
+    });
+
+  return wrapperId;
+}
+
+export async function updateWrapperMetadata(input: {
+  wrapperId: string;
+  name: string;
+  isDefault: boolean;
+}) {
+  const now = new Date().toISOString();
+  const name = input.name.trim();
+
+  if (!name) {
+    throw new Error("Wrapper name is required.");
+  }
+
+  await db.transaction("rw", [db.wrappers, db.wrapperVersions], async () => {
+    if (input.isDefault) {
+      await db.wrappers.toCollection().modify({ isDefault: false, updatedAt: now });
+    }
+
+    await db.wrappers.update(input.wrapperId, {
+      name,
       isDefault: input.isDefault,
-      createdAt: now,
       updatedAt: now,
     });
   });
 }
 
-export async function updateWrapperEntry(input: {
+export async function createWrapperVersion(input: {
   wrapperId: string;
-  name: string;
   template: string;
-  isDefault: boolean;
+  changeNote?: string;
 }) {
   const now = new Date().toISOString();
 
@@ -1249,28 +1437,66 @@ export async function updateWrapperEntry(input: {
     throw new Error("Wrapper template must contain {{prompt}}.");
   }
 
-  await db.transaction("rw", [db.wrappers], async () => {
-    if (input.isDefault) {
-      await db.wrappers.toCollection().modify({ isDefault: false, updatedAt: now });
-    }
+  await db.transaction("rw", [db.wrappers, db.wrapperVersions], async () => {
+    const versions = await db.wrapperVersions.where("wrapperId").equals(input.wrapperId).toArray();
+    const nextVersionNumber = versions.reduce((max, item) => Math.max(max, item.versionNumber), 0) + 1;
 
     await db.wrappers.update(input.wrapperId, {
-      name: input.name.trim(),
-      template: input.template,
-      isDefault: input.isDefault,
       updatedAt: now,
+    });
+    await db.wrapperVersions.add({
+      id: crypto.randomUUID(),
+      wrapperId: input.wrapperId,
+      versionNumber: nextVersionNumber,
+      template: input.template,
+      changeNote: input.changeNote?.trim() ?? "",
+      createdAt: now,
+    });
+  });
+}
+
+export async function deleteWrapperVersion(wrapperVersionId: string) {
+  const version = await db.wrapperVersions.get(wrapperVersionId);
+  if (!version) {
+    throw new Error("Wrapper version not found.");
+  }
+
+  const [versions, usageCount] = await Promise.all([
+    db.wrapperVersions.where("wrapperId").equals(version.wrapperId).toArray(),
+    db.experimentVersions.where("wrapperVersionId").equals(wrapperVersionId).count(),
+  ]);
+
+  if (usageCount > 0) {
+    throw new Error("Wrapper version is still used by experiment versions.");
+  }
+
+  if (versions.length <= 1) {
+    throw new Error("Cannot delete the last remaining wrapper version.");
+  }
+
+  await db.transaction("rw", [db.wrappers, db.wrapperVersions], async () => {
+    await db.wrapperVersions.delete(wrapperVersionId);
+    await db.wrappers.update(version.wrapperId, {
+      updatedAt: new Date().toISOString(),
     });
   });
 }
 
 export async function deleteWrapperEntry(wrapperId: string) {
-  const usageCount = await db.experiments.where("wrapperId").equals(wrapperId).count();
+  const versions = await db.wrapperVersions.where("wrapperId").equals(wrapperId).toArray();
+  const versionIds = versions.map((item) => item.id);
+  const usageCount = versionIds.length
+    ? await db.experimentVersions.where("wrapperVersionId").anyOf(versionIds).count()
+    : 0;
 
   if (usageCount > 0) {
-    throw new Error("Wrapper is still used by experiments.");
+    throw new Error("Wrapper is still used by experiment versions.");
   }
 
-  await db.wrappers.delete(wrapperId);
+  await db.transaction("rw", [db.wrappers, db.wrapperVersions], async () => {
+    await db.wrapperVersions.where("wrapperId").equals(wrapperId).delete();
+    await db.wrappers.delete(wrapperId);
+  });
 }
 
 function getExperimentsSortCollection(sort: ExperimentsPageInput["sort"]) {
@@ -1309,34 +1535,34 @@ export async function loadExperimentsPage(input: ExperimentsPageInput): Promise<
   }
 
   const experimentIds = experiments.map((item) => item.id);
-  const promptVersions = await db.promptVersions.where("experimentId").anyOf(experimentIds).toArray();
-  const promptVersionIds = promptVersions.map((item) => item.id);
-  const results = promptVersionIds.length
-    ? await db.results.where("promptVersionId").anyOf(promptVersionIds).toArray()
+  const experimentVersions = await db.experimentVersions.where("experimentId").anyOf(experimentIds).toArray();
+  const experimentVersionIds = experimentVersions.map((item) => item.id);
+  const results = experimentVersionIds.length
+    ? await db.results.where("experimentVersionId").anyOf(experimentVersionIds).toArray()
     : [];
 
   const categoriesById = new Map(categories.map((item) => [item.id, item]));
   const modelsById = new Map(models.map((item) => [item.id, item]));
   const providersById = new Map(providers.map((item) => [item.id, item]));
-  const promptVersionsByExperiment = new Map<string, typeof promptVersions>();
+  const experimentVersionsByExperiment = new Map<string, typeof experimentVersions>();
 
-  for (const version of promptVersions) {
-    const list = promptVersionsByExperiment.get(version.experimentId) ?? [];
+  for (const version of experimentVersions) {
+    const list = experimentVersionsByExperiment.get(version.experimentId) ?? [];
     list.push(version);
-    promptVersionsByExperiment.set(version.experimentId, list);
+    experimentVersionsByExperiment.set(version.experimentId, list);
   }
 
-  const resultsByPromptVersion = new Map<string, typeof results>();
+  const resultsByExperimentVersion = new Map<string, typeof results>();
   for (const result of results) {
-    const list = resultsByPromptVersion.get(result.promptVersionId) ?? [];
+    const list = resultsByExperimentVersion.get(result.experimentVersionId) ?? [];
     list.push(result);
-    resultsByPromptVersion.set(result.promptVersionId, list);
+    resultsByExperimentVersion.set(result.experimentVersionId, list);
   }
 
   const items = experiments.map((experiment) => {
     const category = experiment.categoryId ? categoriesById.get(experiment.categoryId) : undefined;
-    const experimentPromptVersions = promptVersionsByExperiment.get(experiment.id) ?? [];
-    const experimentResults = experimentPromptVersions.flatMap((item) => resultsByPromptVersion.get(item.id) ?? []);
+    const versions = experimentVersionsByExperiment.get(experiment.id) ?? [];
+    const experimentResults = versions.flatMap((item) => resultsByExperimentVersion.get(item.id) ?? []);
     const ratedResults = experimentResults.filter((item) => item.rating !== null);
     const avgRating = ratedResults.length
       ? ratedResults.reduce((sum, item) => sum + (item.rating ?? 0), 0) / ratedResults.length
@@ -1359,7 +1585,7 @@ export async function loadExperimentsPage(input: ExperimentsPageInput): Promise<
       categoryName: category?.name ?? "No category",
       categoryColor: category?.color ?? "#71717a",
       tags: experiment.tags,
-      promptCount: experimentPromptVersions.length,
+      versionCount: versions.length,
       resultCount: experimentResults.length,
       avgRating,
       createdAt: experiment.createdAt,
@@ -1403,15 +1629,16 @@ export async function loadExperimentWorkspace(experimentId: string): Promise<Exp
     return null;
   }
 
-  const [category, wrapper, promptVersions] = await Promise.all([
+  const [category, experimentVersions, wrapperVersions, wrappers] = await Promise.all([
     experiment.categoryId ? db.categories.get(experiment.categoryId) : Promise.resolve(undefined),
-    experiment.wrapperId ? db.wrappers.get(experiment.wrapperId) : Promise.resolve(undefined),
-    db.promptVersions.where("experimentId").equals(experiment.id).sortBy("versionNumber"),
+    db.experimentVersions.where("experimentId").equals(experiment.id).sortBy("versionNumber"),
+    db.wrapperVersions.toArray(),
+    db.wrappers.toArray(),
   ]);
 
-  const promptVersionIds = promptVersions.map((item) => item.id);
-  const rawResults = promptVersionIds.length
-    ? await db.results.where("promptVersionId").anyOf(promptVersionIds).toArray()
+  const experimentVersionIds = experimentVersions.map((item) => item.id);
+  const rawResults = experimentVersionIds.length
+    ? await db.results.where("experimentVersionId").anyOf(experimentVersionIds).toArray()
     : [];
 
   const modelIds = [...new Set(rawResults.map((item) => item.modelId))];
@@ -1421,15 +1648,19 @@ export async function loadExperimentWorkspace(experimentId: string): Promise<Exp
 
   const modelsById = new Map(models.filter(Boolean).map((item) => [item!.id, item!]));
   const providersById = new Map(providers.filter(Boolean).map((item) => [item!.id, item!]));
-  const promptVersionsById = new Map(promptVersions.map((item) => [item.id, item]));
+  const experimentVersionsById = new Map(experimentVersions.map((item) => [item.id, item]));
+  const wrapperVersionsById = new Map(wrapperVersions.map((item) => [item.id, item]));
+  const wrappersById = new Map(wrappers.map((item) => [item.id, item]));
 
   const results: WorkspaceResultItem[] = rawResults
     .map((result) => {
       const model = modelsById.get(result.modelId);
-      const promptVersion = promptVersionsById.get(result.promptVersionId);
+      const experimentVersion = experimentVersionsById.get(result.experimentVersionId);
       const provider = model ? providersById.get(model.providerId) : undefined;
+      const wrapperVersion = result.wrapperVersionId ? wrapperVersionsById.get(result.wrapperVersionId) : undefined;
+      const wrapper = wrapperVersion ? wrappersById.get(wrapperVersion.wrapperId) : undefined;
 
-      if (!model || !promptVersion || !provider) {
+      if (!model || !experimentVersion || !provider) {
         return null;
       }
 
@@ -1441,10 +1672,18 @@ export async function loadExperimentWorkspace(experimentId: string): Promise<Exp
         modelName: model.name,
         modelVersion: model.version,
         modelComment: model.comment,
-        promptVersionNumber: promptVersion.versionNumber,
+        experimentVersionId: experimentVersion.id,
+        experimentVersionNumber: experimentVersion.versionNumber,
+        promptVersionNumber: experimentVersion.versionNumber,
         attempt: result.attempt,
         rating: result.rating,
         notes: result.notes,
+        composedPromptSnapshot: result.composedPromptSnapshot,
+        promptTextSnapshot: result.promptTextSnapshot,
+        wrapperVersionId: result.wrapperVersionId,
+        wrapperName: result.wrapperNameSnapshot ?? wrapper?.name ?? "No wrapper",
+        wrapperVersionNumber: wrapperVersion?.versionNumber ?? null,
+        wrapperTemplateSnapshot: result.wrapperTemplateSnapshot,
         fileSizeBytes: result.fileSizeBytes,
         lineCount: result.lineCount,
         createdAt: result.createdAt,
@@ -1454,6 +1693,34 @@ export async function loadExperimentWorkspace(experimentId: string): Promise<Exp
     .filter((item): item is WorkspaceResultItem => item !== null)
     .sort(sortResults);
 
+  const resultCountsByExperimentVersionId = new Map<string, number>();
+  for (const result of results) {
+    resultCountsByExperimentVersionId.set(
+      result.experimentVersionId,
+      (resultCountsByExperimentVersionId.get(result.experimentVersionId) ?? 0) + 1,
+    );
+  }
+
+  const versions = [...experimentVersions]
+    .sort((left, right) => right.versionNumber - left.versionNumber)
+    .map((item) => {
+      const wrapperVersion = item.wrapperVersionId ? wrapperVersionsById.get(item.wrapperVersionId) : undefined;
+      const wrapper = wrapperVersion ? wrappersById.get(wrapperVersion.wrapperId) : undefined;
+
+      return {
+        id: item.id,
+        versionNumber: item.versionNumber,
+        promptText: item.promptText,
+        wrapperVersionId: item.wrapperVersionId,
+        wrapperName: wrapper?.name ?? "No wrapper",
+        wrapperVersionNumber: wrapperVersion?.versionNumber ?? null,
+        wrapperTemplate: wrapperVersion?.template ?? "",
+        changeNote: item.changeNote,
+        createdAt: item.createdAt,
+        resultCount: resultCountsByExperimentVersionId.get(item.id) ?? 0,
+      };
+    });
+
   return {
     id: experiment.id,
     title: experiment.title,
@@ -1462,20 +1729,10 @@ export async function loadExperimentWorkspace(experimentId: string): Promise<Exp
     categoryName: category?.name ?? "No category",
     categoryColor: category?.color ?? "#71717a",
     tags: experiment.tags,
-    wrapperId: experiment.wrapperId,
-    wrapperName: wrapper?.name ?? "No wrapper",
-    wrapperTemplate: wrapper?.template ?? "",
     createdAt: experiment.createdAt,
     updatedAt: experiment.updatedAt,
-    promptVersions: [...promptVersions]
-      .sort((left, right) => right.versionNumber - left.versionNumber)
-      .map((item) => ({
-        id: item.id,
-        versionNumber: item.versionNumber,
-        promptText: item.promptText,
-        changeNote: item.changeNote,
-        createdAt: item.createdAt,
-      })),
+    versions,
+    promptVersions: versions,
     results,
   };
 }
@@ -1516,8 +1773,8 @@ export async function updateResultEntry(input: {
 
     if (previousModelId !== input.modelId) {
       const previousAttempts = await db.results
-        .where("[promptVersionId+modelId+attempt]")
-        .between([result.promptVersionId, input.modelId, Dexie.minKey], [result.promptVersionId, input.modelId, Dexie.maxKey])
+        .where("[experimentVersionId+modelId+attempt]")
+        .between([result.experimentVersionId, input.modelId, Dexie.minKey], [result.experimentVersionId, input.modelId, Dexie.maxKey])
         .toArray();
       nextAttempt = previousAttempts.filter((item) => item.id !== result.id).length + 1;
     }
@@ -1590,32 +1847,32 @@ export async function createExperimentWithInitialPrompt(input: {
   title: string;
   description: string;
   categoryId: string | null;
-  wrapperId: string | null;
+  wrapperVersionId: string | null;
   tags: string[];
   promptText: string;
   changeNote: string;
 }) {
   const now = new Date().toISOString();
   const experimentId = crypto.randomUUID();
-  const promptVersionId = crypto.randomUUID();
+  const experimentVersionId = crypto.randomUUID();
 
-  await db.transaction("rw", [db.experiments, db.promptVersions], async () => {
+  await db.transaction("rw", [db.experiments, db.experimentVersions], async () => {
     await db.experiments.add({
       id: experimentId,
       title: input.title,
       description: input.description,
       categoryId: input.categoryId,
-      wrapperId: input.wrapperId,
       tags: input.tags,
       createdAt: now,
       updatedAt: now,
     });
 
-    await db.promptVersions.add({
-      id: promptVersionId,
+    await db.experimentVersions.add({
+      id: experimentVersionId,
       experimentId,
       versionNumber: 1,
       promptText: input.promptText,
+      wrapperVersionId: input.wrapperVersionId,
       changeNote: input.changeNote,
       createdAt: now,
     });
@@ -1626,7 +1883,7 @@ export async function createExperimentWithInitialPrompt(input: {
 
 export async function createResultEntry(input: {
   experimentId: string;
-  promptVersionId: string;
+  experimentVersionId: string;
   modelId: string;
   htmlContent: string;
   rating: number | null;
@@ -1637,22 +1894,36 @@ export async function createResultEntry(input: {
   const notes = input.notes.trim();
   const resultId = crypto.randomUUID();
 
-  await db.transaction("rw", [db.providers, db.models, db.results, db.experiments], async () => {
+  await db.transaction("rw", [db.models, db.results, db.experiments, db.experimentVersions, db.wrapperVersions, db.wrappers], async () => {
     const model = await db.models.get(input.modelId);
     if (!model) {
       throw new Error("Selected model no longer exists.");
     }
+    const experimentVersion = await db.experimentVersions.get(input.experimentVersionId);
+    if (!experimentVersion) {
+      throw new Error("Selected experiment version no longer exists.");
+    }
+    const wrapperVersion = experimentVersion.wrapperVersionId
+      ? await db.wrapperVersions.get(experimentVersion.wrapperVersionId)
+      : undefined;
+    const wrapper = wrapperVersion ? await db.wrappers.get(wrapperVersion.wrapperId) : undefined;
+    const composedPromptSnapshot = buildPromptForClipboard(experimentVersion.promptText, wrapperVersion?.template ?? null);
 
     const previousAttempts = await db.results
-      .where("[promptVersionId+modelId+attempt]")
-      .between([input.promptVersionId, model.id, Dexie.minKey], [input.promptVersionId, model.id, Dexie.maxKey])
+      .where("[experimentVersionId+modelId+attempt]")
+      .between([input.experimentVersionId, model.id, Dexie.minKey], [input.experimentVersionId, model.id, Dexie.maxKey])
       .toArray();
 
     await db.results.add({
       id: resultId,
-      promptVersionId: input.promptVersionId,
+      experimentVersionId: input.experimentVersionId,
       modelId: model.id,
       attempt: previousAttempts.length + 1,
+      composedPromptSnapshot,
+      promptTextSnapshot: experimentVersion.promptText,
+      wrapperVersionId: experimentVersion.wrapperVersionId,
+      wrapperNameSnapshot: wrapper?.name ?? null,
+      wrapperTemplateSnapshot: wrapperVersion?.template ?? null,
       htmlContent,
       rating: input.rating,
       notes,
@@ -1675,7 +1946,6 @@ export async function updateExperimentEntry(input: {
   title: string;
   description: string;
   categoryId: string | null;
-  wrapperId: string | null;
   tags: string[];
 }) {
   const now = new Date().toISOString();
@@ -1684,7 +1954,6 @@ export async function updateExperimentEntry(input: {
     title: input.title.trim(),
     description: input.description.trim(),
     categoryId: input.categoryId,
-    wrapperId: input.wrapperId,
     tags: input.tags,
     updatedAt: now,
   });
@@ -1754,59 +2023,126 @@ export async function deleteCategoryEntry(categoryId: string) {
   await db.categories.delete(categoryId);
 }
 
-export async function updatePromptVersionEntry(input: {
-  promptVersionId: string;
-  promptText: string;
-  changeNote: string;
-  experimentId: string;
-}) {
-  const now = new Date().toISOString();
-
-  await db.transaction("rw", [db.promptVersions, db.experiments], async () => {
-    await db.promptVersions.update(input.promptVersionId, {
-      promptText: input.promptText,
-      changeNote: input.changeNote,
-    });
-    await db.experiments.update(input.experimentId, { updatedAt: now });
-  });
-}
-
-export async function createPromptVersionEntry(input: {
+export async function createExperimentVersionEntry(input: {
   experimentId: string;
   promptText: string;
+  wrapperVersionId: string | null;
   changeNote: string;
 }) {
   const now = new Date().toISOString();
 
-  const versions = await db.promptVersions.where("experimentId").equals(input.experimentId).toArray();
+  const versions = await db.experimentVersions.where("experimentId").equals(input.experimentId).toArray();
   const nextVersionNumber =
     versions.reduce((max, item) => Math.max(max, item.versionNumber), 0) + 1;
 
-  const promptVersionId = crypto.randomUUID();
+  const experimentVersionId = crypto.randomUUID();
 
-  await db.transaction("rw", [db.promptVersions, db.experiments], async () => {
-    await db.promptVersions.add({
-      id: promptVersionId,
+  await db.transaction("rw", [db.experimentVersions, db.experiments], async () => {
+    await db.experimentVersions.add({
+      id: experimentVersionId,
       experimentId: input.experimentId,
       versionNumber: nextVersionNumber,
       promptText: input.promptText,
+      wrapperVersionId: input.wrapperVersionId,
       changeNote: input.changeNote,
       createdAt: now,
     });
     await db.experiments.update(input.experimentId, { updatedAt: now });
   });
 
-  return promptVersionId;
+  return experimentVersionId;
+}
+
+export const createPromptVersionEntry = createExperimentVersionEntry;
+
+export async function updateExperimentVersionEntry(input: {
+  experimentVersionId: string;
+  experimentId: string;
+  promptText: string;
+  wrapperVersionId: string | null;
+  changeNote: string;
+}) {
+  const now = new Date().toISOString();
+  const promptText = input.promptText.trim();
+  const changeNote = input.changeNote.trim();
+
+  await db.transaction("rw", [db.experimentVersions, db.results, db.experiments], async () => {
+    const version = await db.experimentVersions.get(input.experimentVersionId);
+    if (!version) {
+      throw new Error("Experiment version no longer exists.");
+    }
+
+    const resultCount = await db.results.where("experimentVersionId").equals(input.experimentVersionId).count();
+    if (resultCount > 0) {
+      throw new Error("Prompt text and wrapper can only be edited before results are attached.");
+    }
+
+    await db.experimentVersions.update(input.experimentVersionId, {
+      promptText,
+      wrapperVersionId: input.wrapperVersionId,
+      changeNote,
+    });
+
+    await db.experiments.update(input.experimentId, { updatedAt: now });
+  });
+}
+
+export async function updateExperimentVersionChangeNote(input: {
+  experimentVersionId: string;
+  experimentId: string;
+  changeNote: string;
+}) {
+  const now = new Date().toISOString();
+
+  await db.transaction("rw", [db.experimentVersions, db.experiments], async () => {
+    const version = await db.experimentVersions.get(input.experimentVersionId);
+    if (!version) {
+      throw new Error("Experiment version no longer exists.");
+    }
+
+    await db.experimentVersions.update(input.experimentVersionId, {
+      changeNote: input.changeNote.trim(),
+    });
+
+    await db.experiments.update(input.experimentId, { updatedAt: now });
+  });
+}
+
+export async function deleteExperimentVersionEntry(experimentVersionId: string) {
+  const version = await db.experimentVersions.get(experimentVersionId);
+  if (!version) {
+    throw new Error("Experiment version no longer exists.");
+  }
+
+  const [versions, resultCount] = await Promise.all([
+    db.experimentVersions.where("experimentId").equals(version.experimentId).toArray(),
+    db.results.where("experimentVersionId").equals(experimentVersionId).count(),
+  ]);
+
+  if (resultCount > 0) {
+    throw new Error("Experiment version is still used by saved results.");
+  }
+
+  if (versions.length <= 1) {
+    throw new Error("Cannot delete the last remaining experiment version.");
+  }
+
+  await db.transaction("rw", [db.experimentVersions, db.experiments], async () => {
+    await db.experimentVersions.delete(experimentVersionId);
+    await db.experiments.update(version.experimentId, {
+      updatedAt: new Date().toISOString(),
+    });
+  });
 }
 
 export async function loadStatsDashboard(): Promise<StatsDashboardData> {
-  const [workspaceStats, modelAggregateRows, providerAggregateRows, categories, experiments, promptVersions, results, models, providers] = await Promise.all([
+  const [workspaceStats, modelAggregateRows, providerAggregateRows, categories, experiments, experimentVersions, results, models, providers] = await Promise.all([
     db.statsWorkspace.get("workspace"),
     db.statsModels.toArray(),
     db.statsProviders.toArray(),
     db.categories.toArray(),
     db.experiments.toArray(),
-    db.promptVersions.toArray(),
+    db.experimentVersions.toArray(),
     db.results.toArray(),
     db.models.toArray(),
     db.providers.toArray(),
@@ -1818,7 +2154,7 @@ export async function loadStatsDashboard(): Promise<StatsDashboardData> {
   }
 
   const categoriesById = new Map(categories.map((item) => [item.id, item]));
-  const promptVersionsById = new Map(promptVersions.map((item) => [item.id, item]));
+  const experimentVersionsById = new Map(experimentVersions.map((item) => [item.id, item]));
   const experimentsById = new Map(experiments.map((item) => [item.id, item]));
   const modelsById = new Map(models.map((item) => [item.id, item]));
   const providersById = new Map(providers.map((item) => [item.id, item]));
@@ -1832,7 +2168,7 @@ export async function loadStatsDashboard(): Promise<StatsDashboardData> {
     {
       label: "Experiments",
       value: String(experiments.length),
-      helper: `${promptVersions.length} prompt version${promptVersions.length === 1 ? "" : "s"}`,
+      helper: `${experimentVersions.length} version${experimentVersions.length === 1 ? "" : "s"}`,
     },
     {
       label: "Results",
@@ -1896,8 +2232,8 @@ export async function loadStatsDashboard(): Promise<StatsDashboardData> {
   const categoryModelStats = new Map<string, Map<string, { sum: number; ratedCount: number }>>();
 
   for (const result of ratedResults) {
-    const promptVersion = promptVersionsById.get(result.promptVersionId);
-    const experiment = promptVersion ? experimentsById.get(promptVersion.experimentId) : undefined;
+    const experimentVersion = experimentVersionsById.get(result.experimentVersionId);
+    const experiment = experimentVersion ? experimentsById.get(experimentVersion.experimentId) : undefined;
     const categoryKey = experiment?.categoryId ?? "uncategorized";
     const modelMap = categoryModelStats.get(categoryKey) ?? new Map<string, { sum: number; ratedCount: number }>();
     const current = modelMap.get(result.modelId) ?? { sum: 0, ratedCount: 0 };

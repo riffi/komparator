@@ -4,6 +4,7 @@ import { ExperimentsPage } from "@/pages/experiments-page/index";
 import { ModelsPage } from "@/pages/models-page/index";
 import { SettingsPage } from "@/pages/settings-page/index";
 import { StatsPage } from "@/pages/stats-page/index";
+import { WrapperDetailPage } from "@/pages/wrapper-detail-page/index";
 import { WrappersPage } from "@/pages/wrappers-page/index";
 import { appRoutes } from "@/shared/config/routes";
 import { AppShell } from "@/widgets/app-shell/ui/app-shell";
@@ -32,6 +33,14 @@ const router = createBrowserRouter([
       {
         path: appRoutes.wrappers,
         element: <WrappersPage />,
+      },
+      {
+        path: appRoutes.wrappersNew,
+        element: <WrapperDetailPage />,
+      },
+      {
+        path: `${appRoutes.wrappers}/:wrapperId`,
+        element: <WrapperDetailPage />,
       },
       {
         path: appRoutes.stats,

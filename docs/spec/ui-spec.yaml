@@ -79,7 +79,7 @@ screens:
         purpose: "Compact toolbar row: page title 'Experiments' with count of matching items, view mode segmented control (All | By category), title-only search input, sort dropdown, 'Categories' button for inline category management, and 'New experiment' primary button. The new-experiment action opens a lightweight create-only modal; there is no separate edit-experiment screen because experiment and prompt changes are handled inside 'Prompt & settings' on experiment_detail."
         columns: 12
       - id: create_experiment_modal
-        purpose: "Lightweight create-only modal focused on the first useful action. By default it shows only the required fields: `Title` and `Prompt text`. Secondary metadata is intentionally hidden from the first step. A small `Advanced settings` disclosure reveals optional `Description`, `Category`, and `Wrapper`. `Change note` is not part of the first create flow and starts empty for the initial prompt version."
+        purpose: "Lightweight create-only modal focused on the first useful action. By default it shows only the required fields: `Title` and `Prompt text`. Secondary metadata is intentionally hidden from the first step. A small `Advanced settings` disclosure reveals optional `Description`, `Category`, and `Wrapper version`. Wrapper selection must list concrete immutable wrapper versions (for example `Standard HTML v3`, `Standard HTML v2`, `Tailwind CDN v1`) so the user explicitly chooses which wrapper_version becomes part of the initial experiment_version. `Change note` is not part of the first create flow and starts empty for the initial prompt version."
         columns: 12
       - id: categories_manager
         purpose: "Modal opened from the toolbar on the experiments page. Lists categories with color, description and experiment count. Supports create, rename, recolor and delete. Delete is disabled when the category is still used by experiments."
@@ -89,19 +89,19 @@ screens:
         columns: 12
         blocks:
           - id: experiment_card
-            purpose: "Repeated card per experiment. Shows: title (bold, clickable → experiment_detail), description (2 lines truncated), category badge (colored dot + name), stats row (number of prompt versions, number of results, avg rating as colored number). If the experiment already has results, the card may also show a compact mini-preview of the top result (best rating, with latest result as fallback) together with provider/model label and rating. The card preview is lazy: list data contains only preview metadata, while the actual HTML is fetched and the iframe is mounted only when the card approaches the viewport; before that a lightweight placeholder is shown. Bottom: created date and last updated relative time. Hover: subtle elevation. Click anywhere → experiment_detail."
+            purpose: "Repeated card per experiment. Shows: title (bold, clickable → experiment_detail), description (2 lines truncated), category badge (colored dot + name), stats row (number of experiment versions, number of results, avg rating as colored number). If the experiment already has results, the card may also show a compact mini-preview of the top result (best rating, with latest result as fallback) together with provider/model label and rating. The card preview is lazy: list data contains only preview metadata, while the actual HTML is fetched and the iframe is mounted only when the card approaches the viewport; before that a lightweight placeholder is shown. Bottom: created date and last updated relative time. Hover: subtle elevation. Click anywhere → experiment_detail."
     title: Experiments
     purpose: Main screen. Browse experiments either as one list or grouped into category sections, with incremental pagination and lazy card previews to keep the landing page responsive for large local datasets.
   experiment_detail:
     blocks:
       - id: experiment_topbar
-        purpose: "Compact informational header above the main workspace block: experiment title (bold, left), category badge and description. This row sits outside the bordered results/settings container and does not duplicate prompt-copying or editing actions that already exist deeper in the workflow."
+        purpose: "Compact informational header above the main workspace block: experiment title and category badge live here as primary metadata. Title is editable inline directly in the header. Category is shown as a badge in read mode and becomes an inline dropdown when the user clicks it. Description stays as contextual text below. This row sits outside the bordered results/settings container and replaces the need for a separate experiment-settings side panel."
         columns: 12
       - id: experiment_tabs
-        purpose: "Tab bar with two tabs: 'Results' (shows count badge with number of results) and 'Prompt & settings'. Results tab active by default. Right side of tab bar (visible only on Results tab): view mode toggle (Single | Side by side), prompt version dropdown (v1/v2/v3), '+ Add result' primary button."
+        purpose: "Tab bar with two tabs: 'Results' (shows count badge with number of results) and 'Prompt & settings'. Results tab active by default. Right side of tab bar (visible only on Results tab): view mode toggle (Single | Side by side), experiment version dropdown (v1/v2/v3), '+ Add result' primary button."
         columns: 12
       - id: add_result_modal
-        purpose: "Modal flow for attaching a result to the current prompt version. The content is organized as three explicit steps on one screen. Step 1: compact prompt block with version, wrapper, copy action and final clipboard prompt preview. The copied prompt always includes a built-in instruction to return exactly one HTML page and no explanation outside it; external assets and CDNs are allowed. Wrapper is optional and, when present, wraps that final prompt. Step 2: chosen model summary with a 'Choose model' action opening a dedicated chooser modal. Step 3: large HTML output textarea. Optional notes stay collapsed by default below the HTML field. Rating is not collected at this stage; it is set later while reviewing the rendered result."
+        purpose: "Modal flow for attaching a result to the current experiment version. The content is organized as three explicit steps on one screen. Step 1: compact prompt block with experiment version, wrapper version, copy action and final clipboard prompt preview. The copied prompt always includes a built-in instruction to return exactly one HTML page and no explanation outside it; external assets and CDNs are allowed. Wrapper is optional and, when present, wraps that final prompt. The exact composed prompt for this launch is snapshotted into result metadata. Step 2: chosen model summary with a 'Choose model' action opening a dedicated chooser modal. Step 3: large HTML output textarea. Optional notes stay collapsed by default below the HTML field. Rating is not collected at this stage; it is set later while reviewing the rendered result."
         columns: 12
       - id: add_result_model_manager
         purpose: "Shared model picker modal used both from Add result and from Edit result when the user changes the model attached to an existing saved result. Left side: model browser with tabs (`Popular`, `Catalog`, `My models`), search by model/provider text, provider filter dropdown and sort toggle (`Recent` / `Name`). `Recent` sorts local models by last usage across the app so the most recently used models appear first. User can choose an existing local model, add one from the remote catalog, or bulk-load the `popular` preset. Local model rows also expose quick actions for edit and duplicate without leaving the modal. Right side: shared model editor used for create, edit and duplicate flows (existing or new provider, model name, version, comment, active state). Newly created or updated model becomes immediately selectable for the current add/edit-result flow."
@@ -111,13 +111,13 @@ screens:
         columns: 12
         blocks:
           - id: results_list
-            purpose: "Left panel: scrollable list of results for selected prompt version. Each item shows: provider color dot, model name (bold, allowed to wrap onto multiple lines when long), version + comment on second line (muted), rating number (colored by rating-scale palette), attempt badge (if >1). Each row also has a compact overflow action button opening a menu with 'Edit' and 'Delete'. Edit opens a modal for changing the saved HTML output, notes, and the model attached to that result via the same shared model picker used in Add result. Delete opens a confirmation modal. Selected item highlighted with left border accent. Click selects result for preview. In side-by-side mode: click assigns to slot A or B (visually marked with A/B labels and distinct left-border colors). Sort control at top is functional and supports rating / model / date. If the selected prompt version has no results yet, the panel shows a compact empty state instead of an empty list. If the list exceeds the available height, the panel itself scrolls."
+            purpose: "Left panel: scrollable list of results for selected experiment version. Each item shows: provider color dot, model name (bold, allowed to wrap onto multiple lines when long), version + comment on second line (muted), rating number (colored by rating-scale palette), attempt badge (if >1). Each row also has a compact overflow action button opening a menu with 'Edit' and 'Delete'. Edit opens a modal for changing the saved HTML output, notes, and the model attached to that result via the same shared model picker used in Add result. Delete opens a confirmation modal. Selected item highlighted with left border accent. Click selects result for preview. In side-by-side mode: click assigns to slot A or B (visually marked with A/B labels and distinct left-border colors). Sort control at top is functional and supports rating / model / date. If the selected experiment version has no results yet, the panel shows a compact empty state instead of an empty list. If the list exceeds the available height, the panel itself scrolls."
             columns:
               default: 3
               mobile: 12
               tablet: 4
           - id: results_preview_single
-            purpose: "Right panel: full preview of selected result. Single compact header combines provider dot + full model name (provider / name / version), compact rating control, comment, file size and line count. The same header also contains local preview controls: device width switcher with user-facing labels 'Mobile' / 'Tablet' / 'Desktop' (internally 375px / 768px / 100%), 'Fullscreen', and a compact overflow menu '...' with 'Code' and 'Notes'. 'Fullscreen' opens an overlay with the same current preview state (single or compare, current device width, current code mode) and closes via close button or Escape. In single-result fullscreen mode, fast result switching is available directly in the header via previous/next controls next to the model title, plus a compact attempt badge. Main area: sandboxed iframe (srcdoc) rendering the HTML result, takes all available height. Code mode uses syntax highlighting for HTML, including CSS inside <style> blocks and JavaScript inside <script> blocks. If there are no results for the selected prompt version, the preview area is replaced by a dedicated empty state with 'Copy prompt' and '+ Add result' actions. If rendered HTML or code exceeds the available height, scrolling stays inside the preview area."
+            purpose: "Right panel: full preview of selected result. Single compact header combines provider dot + full model name (provider / name / version), compact rating control, comment, file size and line count. The same header also contains local preview controls: device width switcher with user-facing labels 'Mobile' / 'Tablet' / 'Desktop' (internally 375px / 768px / 100%), 'Fullscreen', and a compact overflow menu '...' with 'Code', 'Notes' and 'Prompt snapshot'. 'Fullscreen' opens an overlay with the same current preview state (single or compare, current device width, current code mode) and closes via close button or Escape. In single-result fullscreen mode, fast result switching is available directly in the header via previous/next controls next to the model title, plus a compact attempt badge. Main area: sandboxed iframe (srcdoc) rendering the HTML result, takes all available height. Code mode uses syntax highlighting for HTML, including CSS inside <style> blocks and JavaScript inside <script> blocks. If there are no results for the selected experiment version, the preview area is replaced by a dedicated empty state with 'Copy prompt' and '+ Add result' actions. If rendered HTML or code exceeds the available height, scrolling stays inside the preview area."
             columns:
               default: 9
               mobile: 12
@@ -129,17 +129,17 @@ screens:
               mobile: 12
               tablet: 8
       - id: prompt_settings_tab
-        purpose: Secondary tab (hidden by default). Contains all prompt and experiment configuration. Rarely accessed — user comes here to edit prompt text or change settings, then returns to Results.
+        purpose: Secondary tab (hidden by default). Contains experiment-version management only. Rarely accessed — user comes here to inspect the current version or create a new one, then returns to Results.
         columns: 12
         blocks:
           - id: prompt_versions
-            purpose: "Prompt version selector: horizontal pills (v1, v2, v3...) with '+ New version' button at end. Active version highlighted."
+            purpose: "Left-side version history list for the current experiment, matching the wrappers screen pattern instead of horizontal pills. Each row shows version label (v1, v2, ...), created date, change_note preview, selected state, and result count for that experiment_version. Active version highlighted. Each version is immutable after creation and represents one complete set of input conditions. Switching between versions only changes the read-only view; it never creates or updates a version in the background. Versions with no linked results may expose a delete action, but deletion is blocked when results exist and the last remaining experiment_version cannot be removed."
             columns: 12
           - id: prompt_editor
-            purpose: "Selected version: prompt text in editable monospace editor with a line-number gutter (surface-code background). Below: change_note (italic, muted text — what changed from previous version). Save changes button is enabled only when something changed."
+            purpose: "Selected version is shown in an audit-friendly editor. If the selected experiment_version has no linked results yet, its prompt text and wrapper_version may still be edited in place and saved without creating a new version. Once at least one result is linked, prompt text and wrapper_version become read-only and further condition changes require explicit `+ New version` flow. `change_note` remains editable for any version because it is descriptive metadata rather than an input condition. Wrapper choice inside a draft or editable zero-result version must list concrete immutable wrapper versions, not just wrapper families or latest aliases."
             columns: 12
-          - id: experiment_settings
-            purpose: "Collapsible settings section: title, description (editable textarea), wrapper selector (dropdown with 'No wrapper' option, shows the final clipboard prompt with the built-in HTML instruction when wrapper is not selected and the wrapped final prompt preview otherwise), category selector (dropdown with optional empty state / 'No category'). Experiment created/updated dates plus prompt version created date are shown as read-only fields."
+          - id: experiment_version_delete_confirm
+            purpose: "Confirmation modal opened when the user tries to delete an experiment_version from the left version list. Explains that only versions with no linked results may be deleted and that the last remaining version of the experiment cannot be removed. Replaces browser-native confirm dialogs."
             columns: 12
     title: Experiment Detail
     purpose: "Central workspace for one experiment. Two tabs: Results (default, primary workspace) and Prompt & settings (rare editing). Results tab has list+preview layout with single/side-by-side modes."
@@ -175,7 +175,7 @@ screens:
         purpose: "Visible only on the 'Catalog' tab. Right-side card listing catalog presets. Each preset shows title, description, model count, optional delta badge after catalog update, and a `Load` action that imports those models into the local list."
         columns: 12
     title: Models
-    purpose: Manage two related but distinct layers: the user's local working model list and the updatable external catalog.
+    purpose: "Manage two related but distinct layers: the user's local working model list and the updatable external catalog."
   model_form:
     blocks:
       - id: model_form_content
@@ -189,30 +189,52 @@ screens:
   wrappers_list:
     blocks:
       - id: wrappers_header
-        purpose: Page title 'Wrappers', 'Add wrapper' primary button.
+        purpose: "Page title 'Wrappers' with count of wrappers and 'Add wrapper' primary button. Both the primary action and clicking a wrapper card navigate to the dedicated wrapper editor screen; inline modal editing is not used."
         columns: 12
       - id: wrappers_grid
-        purpose: "Grid of wrapper cards. Each: name (bold), 'default' badge if is_default, template text preview (first 3 lines, monospace, surface-code background), usage count (how many experiments use it), updated date. Click → wrapper_form. Actions: duplicate, set as default, delete (with check if used by experiments). If there are no wrappers yet, the grid area switches to a styled onboarding empty state that explains what wrappers are, how {{prompt}} works, and how wrappers are attached to experiments before comparison."
+        purpose: "Grid of wrapper cards. Each card shows: name (bold), 'default' badge if is_default, latest-version badge (for example `v3`), template text preview from the latest version (first 3 lines, monospace, surface-code background), usage count (how many experiment versions use any version of this wrapper), and updated date. Click opens the dedicated wrapper screen. Card-level quick actions are limited to safe wrapper-level actions such as set default and delete; version editing does not happen inside the card. If there are no wrappers yet, the grid area switches to a styled onboarding empty state that explains what wrappers are, how {{prompt}} works, and how wrapper versions are attached to experiment versions before comparison."
+        columns: 12
+      - id: wrapper_delete_confirm
+        purpose: "Confirmation modal opened from a wrapper card delete action. Explains that deleting a wrapper removes the wrapper record and all of its versions, and that the action is blocked if any experiment_version still references one of those wrapper_version records."
         columns: 12
     title: Wrappers
     purpose: Manage prompt wrapper templates.
   wrapper_form:
     blocks:
-      - id: wrapper_editor
-        purpose: "Left panel: name input (top), template textarea (monospace, large, surface-code background, line numbers). Must contain {{prompt}} placeholder — show validation warning if missing. is_default toggle below."
+      - id: wrapper_header
+        purpose: "Top row for the dedicated wrapper screen. Shows back action to Wrappers list plus wrapper-level metadata inline: wrapper name is editable directly in the header, and the default toggle/badge sits on the same line next to the name. Heavy status copy such as latest-version summary is intentionally omitted. Primary action is `New version`, which starts an explicit draft flow from the currently selected version. Deleting or changing default status is handled here as wrapper-level metadata, not as version creation. In create-mode this same screen is used to define wrapper metadata and explicitly publish the first version `v1`."
+        columns: 12
+      - id: wrapper_versions_list
+        purpose: "Left panel with the full version history for the current wrapper. Each row shows version label (v1, v2, ...), created date, change_note preview, and usage count (how many experiment versions reference this wrapper_version). User can switch between versions explicitly. Existing versions are immutable and open in read-only mode by default. Unused versions may also expose a delete action, but only when no experiment_version references them and the wrapper still keeps at least one remaining version after deletion."
         columns:
-          default: 6
+          default: 3
+          mobile: 12
+      - id: wrapper_version_view
+        purpose: "Main read-only version inspector for the selected wrapper version. Shows version number, created date, full change_note, template body in monospace block, and final composed prompt preview with sample prompt applied. This mode is for auditability and safe switching between versions without accidentally creating a new one."
+        columns:
+          default: 5
+          mobile: 12
+      - id: wrapper_version_draft
+        purpose: "Editor panel shown only when the user explicitly starts `New version`. The draft is initialized from the selected version, then the user changes template and next-version change_note. Typing in this draft does not create or persist a wrapper_version automatically. The draft must contain {{prompt}} and is published only by explicit `Create version` / `Publish version` action."
+        columns:
+          default: 4
           mobile: 12
       - id: wrapper_preview
-        purpose: "Right panel: live preview showing how the wrapper will look with a sample prompt substituted into {{prompt}}. Sample prompt is editable. Rendered in monospace, surface-code background. Shows total character count."
+        purpose: "Minimal live composed-prompt preview for the currently selected read-only version or the current draft, depending on mode. Uses a restrained neutral surface instead of a decorative sandbox treatment. Shows an editable sample prompt, compact char count, and the final composed prompt with {{prompt}} substituted. Rendered in monospace, surface-code background."
         columns:
-          default: 6
+          default: 12
           mobile: 12
-      - id: wrapper_form_footer
-        purpose: Cancel and Save buttons.
+      - id: wrapper_publish_bar
+        purpose: "Sticky action row visible only in draft mode. Contains `Discard draft` and `Create version` actions plus validation and status hints. New immutable wrapper_version is created only from this bar, never from background autosave or from switching fields."
+        columns: 12
+      - id: wrapper_delete_confirm
+        purpose: "Confirmation modal opened from the wrapper header delete action. Explains that deleting the wrapper removes all of its versions and is blocked if any experiment_version still references one of those versions."
+        columns: 12
+      - id: wrapper_version_delete_confirm
+        purpose: "Confirmation modal opened when the user deletes an unused wrapper_version from the version history list. Makes clear that only unused versions can be removed and that at least one wrapper_version must remain."
         columns: 12
     title: New / Edit Wrapper
-    purpose: Full-screen or large modal for editing wrapper template with live preview.
+    purpose: "Dedicated wrapper management screen. Supports browsing immutable wrapper versions, switching between them, and creating a new version through an explicit draft-and-publish flow. This is a full screen, not a modal."
   stats_dashboard:
     blocks:
       - id: stats_summary
@@ -239,7 +261,7 @@ screens:
           default: 6
           mobile: 12
     title: Stats
-    purpose: Aggregated statistics across all experiments, models, and ratings. The screen uses a hybrid loading model: top-level summary, leaderboard, and provider breakdown come from local precomputed aggregates, while category matrix and rating history may still be derived from raw rated results.
+    purpose: "Aggregated statistics across all experiments, models, and ratings. The screen uses a hybrid loading model: top-level summary, leaderboard, and provider breakdown come from local precomputed aggregates, while category matrix and rating history may still be derived from raw rated results."
   settings_page:
     blocks:
       - id: backup_export

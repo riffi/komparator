@@ -64,11 +64,10 @@ entities:
   wrapper:
     label: Обёртка
     description: |
-      Шаблон-инструкция, которая оборачивает итоговый prompt при копировании в LLM.
-      Стандартизирует условия эксперимента (формат ответа, ограничения, стиль).
-      Содержит плейсхолдер {{prompt}} куда подставляется итоговый prompt:
-      системная HTML-инструкция + текст prompt_version.prompt_text.
-      Системная инструкция не запрещает CDN и внешние ресурсы.
+      Именованное семейство шаблонов-инструкций, используемое для стандартизации
+      условий эксперимента. Сама запись wrapper не используется напрямую при
+      копировании prompt в LLM: для запуска всегда берётся конкретная
+      immutable-версия wrapper_version.
     fields:
       id:
         type: uuid
@@ -79,14 +78,6 @@ entities:
         required: true
         label: Название
         description: "Например: Standard HTML, Tailwind CDN, Dark Theme Only"
-      template:
-        type: string
-        required: true
-        label: Шаблон
-        description: |
-          Текст обёртки с плейсхолдером {{prompt}}.
-          Пример: "Return one HTML document and no explanation outside it.
-          External libraries and CDNs are allowed when useful.\n\nTask:\n{{prompt}}"
       is_default:
         type: boolean
         default: false
@@ -100,11 +91,52 @@ entities:
         type: datetime
         required: true
         default: now
+  wrapper_version:
+    label: Версия обёртки
+    description: |
+      Immutable-версия wrapper. Содержит конкретный template с плейсхолдером
+      {{prompt}} и может быть выбрана в experiment_version как часть входных
+      условий эксперимента.
+    fields:
+      id:
+        type: uuid
+        pk: true
+        default: uuid_generate_v4()
+      wrapper_id:
+        type: uuid
+        required: true
+        fk: wrapper.id
+        label: Обёртка
+      version_number:
+        type: integer
+        required: true
+        label: Номер версии
+        description: Автоинкремент внутри wrapper (1, 2, 3...)
+      template:
+        type: string
+        required: true
+        label: Шаблон
+        description: |
+          Текст обёртки с плейсхолдером {{prompt}}.
+          Пример: "Return one HTML document and no explanation outside it.
+          External libraries and CDNs are allowed when useful.\n\nTask:\n{{prompt}}"
+      change_note:
+        type: string
+        label: Заметка об изменении
+        description: Что изменилось по сравнению с предыдущей версией wrapper
+      created_at:
+        type: datetime
+        required: true
+        default: now
+    unique_constraints:
+      - - wrapper_id
+        - version_number
   experiment:
     label: Эксперимент
     description: |
-      Центральная сущность. Объединяет промпт (с версиями),
-      результаты от разных моделей и метаданные.
+      Центральная сущность-контейнер. Хранит только метаданные и объединяет
+      experiment_version, результаты от разных моделей и пользовательскую
+      организацию данных.
     fields:
       id:
         type: uuid
@@ -126,15 +158,6 @@ entities:
         description: |
           Опциональная категория эксперимента. Может быть null, если эксперимент
           ещё не отнесён к конкретной группе.
-      wrapper_id:
-        type: uuid
-        fk: wrapper.id
-        label: Обёртка
-        description: |
-          Опциональная обёртка для копирования промпта. Если не указана,
-          в буфер обмена копируется итоговый prompt без wrapper:
-          системная HTML-инструкция + исходный prompt_text.
-          В первом create-flow скрыта в advanced settings и не обязательна.
       tags:
         type: json
         label: Теги
@@ -147,12 +170,16 @@ entities:
         type: datetime
         required: true
         default: now
-  prompt_version:
-    label: Версия промпта
+  experiment_version:
+    label: Версия эксперимента
     description: |
-      Итеративные версии промпта внутри эксперимента.
-      Результаты привязываются к конкретной версии, чтобы видеть
-      как улучшение промпта влияет на качество.
+      Версия входных условий эксперимента. Объединяет текст промпта,
+      выбранную wrapper_version и change_note. Пока к версии не привязан
+      ни один result, `prompt_text` и `wrapper_version_id` ещё могут быть
+      отредактированы in-place без смены `version_number`. После появления
+      первого result эти поля становятся immutable, и дальнейшее изменение
+      входных условий требует создания новой experiment_version. Поле
+      `change_note` остаётся редактируемым всегда как описательная метадата.
     fields:
       id:
         type: uuid
@@ -172,7 +199,15 @@ entities:
         type: string
         required: true
         label: Текст промпта
-        description: Чистый промпт без обёртки
+        description: Чистый пользовательский prompt без wrapper
+      wrapper_version_id:
+        type: uuid
+        fk: wrapper_version.id
+        label: Версия обёртки
+        description: |
+          Опциональная wrapper_version, входящая в состав этой версии
+          эксперимента. Если null, итоговый prompt строится только из
+          системной HTML-инструкции и prompt_text.
       change_note:
         type: string
         label: Заметка об изменении
@@ -412,23 +447,23 @@ entities:
     label: Результат
     description: |
       HTML-код, полученный от LLM-модели в ответ на промпт.
-      Привязан к конкретной версии промпта и конкретной модели.
+      Привязан к конкретной версии эксперимента и конкретной модели.
       Поддерживает несколько попыток (attempt) для одной и той же
-      комбинации промпт + модель — для сравнения стабильности генерации.
+      комбинации версия эксперимента + модель — для сравнения стабильности генерации.
       Содержит рейтинг (голосование) от пользователя.
       При редактировании результат может быть перепривязан к другой локальной модели;
-      в этом случае attempt пересчитывается внутри новой пары prompt_version + llm_model,
+      в этом случае attempt пересчитывается внутри новой пары experiment_version + llm_model,
       а агрегаты stats пересобираются.
     fields:
       id:
         type: uuid
         pk: true
         default: uuid_generate_v4()
-      prompt_version_id:
+      experiment_version_id:
         type: uuid
         required: true
-        fk: prompt_version.id
-        label: Версия промпта
+        fk: experiment_version.id
+        label: Версия эксперимента
       llm_model_id:
         type: uuid
         required: true
@@ -439,7 +474,33 @@ entities:
         required: true
         default: 1
         label: Попытка
-        description: Номер попытки генерации (1, 2, 3...). Автоинкремент внутри пары промпт+модель
+        description: Номер попытки генерации (1, 2, 3...). Автоинкремент внутри пары версия эксперимента + модель
+      composed_prompt_snapshot:
+        type: string
+        required: true
+        label: Снимок итогового prompt
+        description: |
+          Полный prompt, который реально был скопирован в LLM при создании
+          результата: системная HTML-инструкция + prompt_text + wrapper_version,
+          если она была выбрана.
+      prompt_text_snapshot:
+        type: string
+        required: true
+        label: Снимок prompt_text
+        description: Текст prompt из experiment_version на момент запуска
+      wrapper_version_id:
+        type: uuid
+        fk: wrapper_version.id
+        label: Версия обёртки
+        description: wrapper_version, реально использованная при создании результата. Может быть null.
+      wrapper_name_snapshot:
+        type: string
+        label: Снимок названия обёртки
+        description: Название wrapper на момент запуска. Null если wrapper не использовалась.
+      wrapper_template_snapshot:
+        type: string
+        label: Снимок шаблона обёртки
+        description: Конкретный template wrapper_version на момент запуска. Null если wrapper не использовалась.
       html_content:
         type: string
         required: true
@@ -466,7 +527,7 @@ entities:
         required: true
         default: now
     unique_constraints:
-      - - prompt_version_id
+      - - experiment_version_id
         - llm_model_id
         - attempt
   stats_workspace:
@@ -481,7 +542,7 @@ entities:
         description: Фиксированное значение `workspace`
       experiments_count:
         type: integer
-      prompt_versions_count:
+      experiment_versions_count:
         type: integer
       results_count:
         type: integer
@@ -542,25 +603,30 @@ relations:
     label: groups
     description: Категория группирует множество экспериментов
   - entity_a: wrapper
-    entity_b: experiment
-    cardinality: one_to_many
-    label: wraps
-    description: Одна обёртка может использоваться во многих экспериментах
-  - entity_a: experiment
-    entity_b: prompt_version
+    entity_b: wrapper_version
     cardinality: one_to_many
     label: has versions
-    description: Эксперимент содержит одну или более версий промпта
+    description: Одна обёртка имеет множество immutable-версий
+  - entity_a: experiment
+    entity_b: experiment_version
+    cardinality: one_to_many
+    label: has versions
+    description: Эксперимент содержит одну или более версий входных условий
+  - entity_a: wrapper_version
+    entity_b: experiment_version
+    cardinality: one_to_many
+    label: used by
+    description: Одна версия обёртки может использоваться во многих версиях эксперимента
   - entity_a: provider
     entity_b: llm_model
     cardinality: one_to_many
     label: offers
     description: Провайдер предлагает множество моделей
-  - entity_a: prompt_version
+  - entity_a: experiment_version
     entity_b: result
     cardinality: one_to_many
     label: produces
-    description: Версия промпта порождает результаты от разных моделей
+    description: Версия эксперимента порождает результаты от разных моделей
   - entity_a: llm_model
     entity_b: result
     cardinality: one_to_many
@@ -571,13 +637,18 @@ indexes:
     - id
     - title
     - category_id
-    - wrapper_id
     - created_at
     - updated_at
-  prompt_version:
+  wrapper_version:
+    - id
+    - wrapper_id
+    - [wrapper_id, version_number]
+    - created_at
+  experiment_version:
     - id
     - experiment_id
     - [experiment_id, version_number]
+    - wrapper_version_id
   provider:
     - id
     - name
@@ -615,9 +686,10 @@ indexes:
     - [catalog_model_id, local_model_id]
   result:
     - id
-    - prompt_version_id
+    - experiment_version_id
     - llm_model_id
-    - [prompt_version_id, llm_model_id, attempt]
+    - wrapper_version_id
+    - [experiment_version_id, llm_model_id, attempt]
     - created_at
     - rating
   stats_workspace:
@@ -630,6 +702,98 @@ indexes:
     - provider_id
     - updated_at
 read_models:
+  experiment_detail:
+    description: |
+      Read-модель для основного экрана одного эксперимента.
+      Возвращает experiment-level metadata, список всех experiment_version
+      с данными для version-management UI и список results для выбранного
+      рабочего контекста.
+    input:
+      experiment_id:
+        type: uuid
+        description: Идентификатор experiment
+    output:
+      experiment:
+        type: object
+        fields:
+          id: uuid
+          title: string
+          description: string
+          category_id: uuid|null
+          category_name: string
+          category_color: string
+          tags: json
+          created_at: datetime
+          updated_at: datetime
+      versions:
+        type: array
+        item:
+          id: uuid
+          version_number: integer
+          prompt_text: string
+          wrapper_version_id: uuid|null
+          wrapper_name: string
+          wrapper_version_number: integer|null
+          wrapper_template: string
+          change_note: string
+          created_at: datetime
+          result_count: integer
+      results:
+        type: array
+        item:
+          id: uuid
+          experiment_version_id: uuid
+          experiment_version_number: integer
+          llm_model_id: uuid
+          provider_name: string
+          provider_color: string
+          model_name: string
+          model_version: string
+          model_comment: string
+          attempt: integer
+          rating: number|null
+          notes: string
+          composed_prompt_snapshot: string
+          prompt_text_snapshot: string
+          wrapper_version_id: uuid|null
+          wrapper_name: string
+          wrapper_version_number: integer|null
+          wrapper_template_snapshot: string|null
+          file_size_bytes: integer
+          line_count: integer
+          created_at: datetime
+  wrapper_detail:
+    description: |
+      Read-модель для экрана управления одним wrapper.
+      Возвращает wrapper-level metadata, полную историю wrapper_version,
+      usage по каждой версии и latest/current состояние для явного
+      versioning-flow без скрытого создания новых версий.
+    input:
+      wrapper_id:
+        type: uuid
+        description: Идентификатор wrapper
+    output:
+      wrapper:
+        type: object
+        fields:
+          id: uuid
+          name: string
+          is_default: boolean
+          created_at: datetime
+          updated_at: datetime
+          latest_version_id: uuid
+          latest_version_number: integer
+          total_usage_count: integer
+      versions:
+        type: array
+        item:
+          id: uuid
+          version_number: integer
+          template: string
+          change_note: string
+          created_at: datetime
+          usage_count: integer
+          is_latest: boolean
   experiments_list_page:
     description: |
       Лёгкая page-проекция для landing screen со списком экспериментов.
@@ -661,7 +825,7 @@ read_models:
           category_id: uuid|null
           category_name: string
           category_color: string
-          prompt_count: integer
+          version_count: integer
           result_count: integer
           avg_rating: number|null
           created_at: datetime
@@ -709,10 +873,26 @@ behavior_rules:
   - id: first_run_welcome
     description: При первом запуске приложения показывается onboarding overlay с кратким объяснением сценария и быстрым действием `Create experiment`. После закрытия повторно не показывается по умолчанию.
   - id: initial_experiment_minimal_flow
-    description: В initial create-flow обязательны только `experiment.title` и `prompt_version.prompt_text`. `description`, `category_id` и `wrapper_id` остаются опциональными и скрыты за advanced settings; `prompt_version.change_note` для первой версии создаётся пустым.
+    description: В initial create-flow обязательны только `experiment.title` и `experiment_version.prompt_text`. `description`, `category_id` и `experiment_version.wrapper_version_id` остаются опциональными и скрыты за advanced settings; `experiment_version.change_note` для первой версии создаётся пустым.
+  - id: immutable_experiment_version
+    description: "`experiment_version.change_note` может редактироваться всегда. Поля `prompt_text` и `wrapper_version_id` можно редактировать только пока к версии не привязан ни один result; после появления первого result эти поля становятся immutable, и их изменение требует создания новой experiment_version."
+  - id: editable_unlaunched_experiment_version
+    description: "Пока к experiment_version не привязан ни один result, UI может позволять редактировать `prompt_text`, `wrapper_version_id` и `change_note` без создания новой версии и без смены `version_number`."
+  - id: explicit_experiment_version_creation
+    description: Новая experiment_version создаётся только по явному пользовательскому действию `Create version`. Изменения draft в UI, переключение между версиями или сохранение experiment-level metadata сами по себе не создают новую запись.
+  - id: delete_unused_experiment_version
+    description: experiment_version может быть удалена только если к ней не привязан ни один result. Удаление последней оставшейся версии эксперимента запрещено.
+  - id: immutable_wrapper_version
+    description: После создания wrapper_version её `template` не редактируется. Изменение wrapper создаёт новую wrapper_version внутри того же wrapper.
+  - id: explicit_wrapper_version_creation
+    description: Новая wrapper_version создаётся только по явному пользовательскому действию `Create version` / `Publish version`. Изменения draft в UI, переключение между версиями или изменение wrapper-level metadata сами по себе не создают новую запись.
+  - id: delete_unused_wrapper_version
+    description: wrapper_version может быть удалена только если на неё не ссылается ни одна experiment_version. Удаление последней оставшейся версии внутри wrapper запрещено.
   - id: delete_model_guard
     description: Локальная модель может быть удалена только если ни один result не ссылается на неё.
   - id: result_model_reassignment
-    description: При смене llm_model_id у существующего result система обязана пересчитать attempt внутри новой пары prompt_version_id + llm_model_id и затем обновить агрегаты stats.
+    description: При смене llm_model_id у существующего result система обязана пересчитать attempt внутри новой пары experiment_version_id + llm_model_id и затем обновить агрегаты stats.
+  - id: result_prompt_snapshot
+    description: При создании result система обязана сохранить `composed_prompt_snapshot`, `prompt_text_snapshot` и snapshot полей wrapper, чтобы запуск оставался воспроизводимым даже после будущих изменений в wrapper и UI.
   - id: models_screen_scroll
     description: На экране Models локальный список моделей и каталог должны скроллиться внутри своих панелей, а не раздувать всю страницу по высоте.

@@ -4,13 +4,14 @@ import {
   CatalogProviderRecord,
   CatalogStateRecord,
   CategoryRecord,
+  ExperimentVersionRecord,
   ExperimentRecord,
   ModelRecord,
   ModelMatchRecord,
-  PromptVersionRecord,
   ProviderRecord,
   ResultRecord,
   WrapperRecord,
+  WrapperVersionRecord,
 } from "@/entities/experiment/model/types";
 import { db } from "@/shared/db/schema";
 import { unzipSingleTextFile, zipSingleTextFile } from "@/shared/lib/zip";
@@ -26,8 +27,9 @@ type BackupPayload = {
   data: {
     categories: CategoryRecord[];
     wrappers: WrapperRecord[];
+    wrapperVersions: WrapperVersionRecord[];
     experiments: ExperimentRecord[];
-    promptVersions: PromptVersionRecord[];
+    experimentVersions: ExperimentVersionRecord[];
     providers: ProviderRecord[];
     models: ModelRecord[];
     catalogState: CatalogStateRecord[];
@@ -55,8 +57,9 @@ function assertBackupPayload(value: unknown): asserts value is BackupPayload {
   const requiredKeys = [
     "categories",
     "wrappers",
+    "wrapperVersions",
     "experiments",
-    "promptVersions",
+    "experimentVersions",
     "providers",
     "models",
     "catalogState",
@@ -87,8 +90,9 @@ export async function exportDatabaseToZip() {
   const [
     categories,
     wrappers,
+    wrapperVersions,
     experiments,
-    promptVersions,
+    experimentVersions,
     providers,
     models,
     catalogState,
@@ -100,8 +104,9 @@ export async function exportDatabaseToZip() {
   ] = await Promise.all([
     db.categories.toArray(),
     db.wrappers.toArray(),
+    db.wrapperVersions.toArray(),
     db.experiments.toArray(),
-    db.promptVersions.toArray(),
+    db.experimentVersions.toArray(),
     db.providers.toArray(),
     db.models.toArray(),
     db.catalogState.toArray(),
@@ -121,8 +126,9 @@ export async function exportDatabaseToZip() {
     data: {
       categories,
       wrappers,
+      wrapperVersions,
       experiments,
-      promptVersions,
+      experimentVersions,
       providers,
       models,
       catalogState,
@@ -151,8 +157,9 @@ export async function importDatabaseFromZip(file: File) {
     [
       db.categories,
       db.wrappers,
+      db.wrapperVersions,
       db.experiments,
-      db.promptVersions,
+      db.experimentVersions,
       db.providers,
       db.models,
       db.catalogState,
@@ -171,15 +178,17 @@ export async function importDatabaseFromZip(file: File) {
       await db.catalogState.clear();
       await db.models.clear();
       await db.providers.clear();
-      await db.promptVersions.clear();
+      await db.experimentVersions.clear();
       await db.experiments.clear();
+      await db.wrapperVersions.clear();
       await db.wrappers.clear();
       await db.categories.clear();
 
       await db.categories.bulkAdd(backup.data.categories);
       await db.wrappers.bulkAdd(backup.data.wrappers);
+      await db.wrapperVersions.bulkAdd(backup.data.wrapperVersions);
       await db.experiments.bulkAdd(backup.data.experiments);
-      await db.promptVersions.bulkAdd(backup.data.promptVersions);
+      await db.experimentVersions.bulkAdd(backup.data.experimentVersions);
       await db.providers.bulkAdd(backup.data.providers);
       await db.models.bulkAdd(backup.data.models);
       await db.catalogState.bulkAdd(backup.data.catalogState);
