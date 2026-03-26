@@ -482,7 +482,10 @@ entities:
         description: |
           Полный prompt, который реально был скопирован в LLM при создании
           результата: системная HTML-инструкция + prompt_text + wrapper_version,
-          если она была выбрана.
+          если она была выбрана. Системная инструкция дополнительно запрещает
+          опору на browser persistence APIs (`localStorage`, `sessionStorage`
+          и аналогичные механизмы), потому что результаты исполняются в
+          sandboxed preview.
       prompt_text_snapshot:
         type: string
         required: true
@@ -894,5 +897,7 @@ behavior_rules:
     description: При смене llm_model_id у существующего result система обязана пересчитать attempt внутри новой пары experiment_version_id + llm_model_id и затем обновить агрегаты stats.
   - id: result_prompt_snapshot
     description: При создании result система обязана сохранить `composed_prompt_snapshot`, `prompt_text_snapshot` и snapshot полей wrapper, чтобы запуск оставался воспроизводимым даже после будущих изменений в wrapper и UI.
+  - id: result_prompt_storage_restriction
+    description: "Встроенная системная инструкция, добавляемая к prompt при создании result, должна явно запрещать зависимость от browser persistence APIs (`localStorage`, `sessionStorage` и аналогичных механизмов), потому что сохранённые результаты рендерятся в sandboxed iframe preview."
   - id: models_screen_scroll
     description: На экране Models локальный список моделей и каталог должны скроллиться внутри своих панелей, а не раздувать всю страницу по высоте.

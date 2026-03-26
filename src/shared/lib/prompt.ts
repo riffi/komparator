@@ -2,6 +2,8 @@ const HTML_OUTPUT_REQUIREMENT = [
   "Return only one complete HTML document for a single-page result.",
   "You may use external assets, libraries, fonts, and CDNs when they help.",
   "Do not wrap the response in markdown fences and do not add explanation outside the HTML.",
+  "Do not rely on localStorage, sessionStorage, IndexedDB, cookies, or other browser persistence APIs.",
+  "The result must work as a self-contained preview without requiring previously saved client-side state.",
 ].join("\n");
 
 export function getPromptSystemAddition() {
