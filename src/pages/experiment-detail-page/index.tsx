@@ -1524,112 +1524,116 @@ export function ExperimentDetailPage() {
             </div>
           </aside>
 
-          <section className="space-y-4">
-            <div className="rounded-lg border border-border/80 bg-code p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="font-mono text-xs uppercase tracking-[0.12em] text-dim">
-                    {versionDraftMode ? "New version draft" : "Selected version"}
+          <section className="min-h-0 space-y-4">
+            <div className="flex min-h-0 max-h-[calc(100vh-240px)] flex-col overflow-hidden rounded-lg border border-border/80 bg-code p-4">
+              <div className="shrink-0">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="font-mono text-xs uppercase tracking-[0.12em] text-dim">
+                      {versionDraftMode ? "New version draft" : "Selected version"}
+                    </div>
+                    <div className="mt-1 text-sm text-muted">
+                      {versionDraftMode
+                        ? "Draft changes stay local until you explicitly create a new experiment version."
+                        : canEditSelectedVersionFields
+                          ? `Version v${activePrompt?.versionNumber ?? "-"} has no linked results yet, so prompt, wrapper, and change note can still be edited in place.`
+                          : `Version v${activePrompt?.versionNumber ?? "-"} already has linked results, so only change note stays editable.`}
+                    </div>
                   </div>
-                  <div className="mt-1 text-sm text-muted">
-                    {versionDraftMode
-                      ? "Draft changes stay local until you explicitly create a new experiment version."
-                      : canEditSelectedVersionFields
-                        ? `Version v${activePrompt?.versionNumber ?? "-"} has no linked results yet, so prompt, wrapper, and change note can still be edited in place.`
-                        : `Version v${activePrompt?.versionNumber ?? "-"} already has linked results, so only change note stays editable.`}
-                  </div>
+                  {!versionDraftMode ? (
+                    <div className="text-xs text-muted">{canEditSelectedVersionFields ? "Editable" : "Note only"}</div>
+                  ) : null}
                 </div>
-                {!versionDraftMode ? (
-                  <div className="text-xs text-muted">{canEditSelectedVersionFields ? "Editable" : "Note only"}</div>
-                ) : null}
               </div>
 
-              <div className="mt-4">
-                <div className="mb-2 font-mono text-xs uppercase tracking-[0.12em] text-dim">Prompt text</div>
-                <div className="grid min-h-[320px] grid-cols-[52px_minmax(0,1fr)] overflow-hidden rounded-lg border border-border/80 bg-[#050608]">
-                  <div className="border-r border-border/80 bg-black/20 px-3 py-3 text-right font-mono text-xs leading-6 text-dim">
-                    {promptLineNumbers.map((line) => (
-                      <div key={line}>{line}</div>
-                    ))}
+              <div className="mt-4 min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
+                <div className="min-h-0">
+                  <div className="mb-2 font-mono text-xs uppercase tracking-[0.12em] text-dim">Prompt text</div>
+                  <div className="grid h-[min(56vh,720px)] min-h-[320px] grid-cols-[52px_minmax(0,1fr)] overflow-hidden rounded-lg border border-border/80 bg-[#050608]">
+                    <div className="overflow-auto border-r border-border/80 bg-black/20 px-3 py-3 text-right font-mono text-xs leading-6 text-dim">
+                      {promptLineNumbers.map((line) => (
+                        <div key={line}>{line}</div>
+                      ))}
+                    </div>
+                    {versionDraftMode || canEditSelectedVersionFields ? (
+                      <textarea
+                        className="h-full min-h-0 w-full resize-none overflow-auto bg-transparent px-4 py-3 font-mono text-sm leading-6 text-text outline-none"
+                        value={versionDraft.promptText}
+                        onChange={(event) =>
+                          setVersionDraft((current) => ({ ...current, promptText: event.target.value }))
+                        }
+                      />
+                    ) : (
+                      <pre className="h-full min-h-0 overflow-auto whitespace-pre-wrap px-4 py-3 font-mono text-sm leading-6 text-text">
+                        {activePrompt?.promptText ?? ""}
+                      </pre>
+                    )}
                   </div>
+                </div>
+
+                <div className="grid gap-4 lg:grid-cols-2">
                   {versionDraftMode || canEditSelectedVersionFields ? (
-                    <textarea
-                      className="min-h-[320px] w-full resize-y bg-transparent px-4 py-3 font-mono text-sm leading-6 text-text outline-none"
-                      value={versionDraft.promptText}
-                      onChange={(event) =>
-                        setVersionDraft((current) => ({ ...current, promptText: event.target.value }))
-                      }
-                    />
+                    <div>
+                      <div className="mb-1 font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Wrapper version</div>
+                      <button
+                        type="button"
+                        className="flex min-h-10 w-full items-center justify-between rounded-md border border-border/80 bg-code px-3 py-2 text-left text-sm text-text transition hover:border-primary/50"
+                        onClick={() => setShowWrapperPicker(true)}
+                      >
+                        <span className="min-w-0 truncate">{selectedVersionWrapperLabel}</span>
+                        <span className="shrink-0 text-xs text-dim">
+                          {versionDraft.wrapperId ? "Change" : "Choose"}
+                        </span>
+                      </button>
+                    </div>
                   ) : (
-                    <pre className="min-h-[320px] whitespace-pre-wrap px-4 py-3 font-mono text-sm leading-6 text-text">
-                      {activePrompt?.promptText ?? ""}
-                    </pre>
+                    <div>
+                      <div className="mb-1 font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Wrapper</div>
+                      <div className="rounded-lg border border-border/80 bg-code px-3 py-2 text-sm text-muted">
+                        {activePrompt?.wrapperVersionId
+                          ? `${activePrompt.wrapperName} v${activePrompt.wrapperVersionNumber ?? "?"}`
+                          : "No wrapper"}
+                      </div>
+                    </div>
+                  )}
+
+                  {versionDraftMode || canEditSelectedVersionNote ? (
+                    <div className="space-y-2">
+                      <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Change note</div>
+                      <InputLike
+                        value={versionDraft.changeNote}
+                        onChange={(value) =>
+                          setVersionDraft((current) => ({ ...current, changeNote: value }))
+                        }
+                        placeholder="What changed from the previous version"
+                      />
+                    </div>
+                  ) : (
+                    <div>
+                      <div className="mb-1 font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Change note</div>
+                      <div className="rounded-lg border border-border/80 bg-code px-3 py-2 text-sm text-muted">
+                        {activePrompt?.changeNote || "No change note"}
+                      </div>
+                    </div>
                   )}
                 </div>
-              </div>
 
-              <div className="mt-4 grid gap-4 lg:grid-cols-2">
-                {versionDraftMode || canEditSelectedVersionFields ? (
-                  <div>
-                    <div className="mb-1 font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Wrapper version</div>
-                    <button
-                      type="button"
-                      className="flex min-h-10 w-full items-center justify-between rounded-md border border-border/80 bg-code px-3 py-2 text-left text-sm text-text transition hover:border-primary/50"
-                      onClick={() => setShowWrapperPicker(true)}
-                    >
-                      <span className="min-w-0 truncate">{selectedVersionWrapperLabel}</span>
-                      <span className="shrink-0 text-xs text-dim">
-                        {versionDraft.wrapperId ? "Change" : "Choose"}
-                      </span>
-                    </button>
+                <div>
+                  <div className="mb-1 font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
+                    {versionDraftMode
+                      ? "Draft composed prompt preview"
+                      : canEditSelectedVersionFields
+                        ? "Live composed prompt preview"
+                        : "Saved version composed prompt preview"}
                   </div>
-                ) : (
-                  <div>
-                    <div className="mb-1 font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Wrapper</div>
-                    <div className="rounded-lg border border-border/80 bg-code px-3 py-2 text-sm text-muted">
-                      {activePrompt?.wrapperVersionId
-                        ? `${activePrompt.wrapperName} v${activePrompt.wrapperVersionNumber ?? "?"}`
-                        : "No wrapper"}
-                    </div>
-                  </div>
-                )}
-
-                {versionDraftMode || canEditSelectedVersionNote ? (
-                  <div className="space-y-2">
-                    <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Change note</div>
-                    <InputLike
-                      value={versionDraft.changeNote}
-                      onChange={(value) =>
-                        setVersionDraft((current) => ({ ...current, changeNote: value }))
-                      }
-                      placeholder="What changed from the previous version"
-                    />
-                  </div>
-                ) : (
-                  <div>
-                    <div className="mb-1 font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Change note</div>
-                    <div className="rounded-lg border border-border/80 bg-code px-3 py-2 text-sm text-muted">
-                      {activePrompt?.changeNote || "No change note"}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="mt-4">
-                <div className="mb-1 font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
-                  {versionDraftMode
-                    ? "Draft composed prompt preview"
-                    : canEditSelectedVersionFields
-                      ? "Live composed prompt preview"
-                      : "Saved version composed prompt preview"}
+                  <pre className="max-h-[220px] overflow-auto whitespace-pre-wrap rounded-lg border border-border/80 bg-[#050608] p-3 font-mono text-xs leading-5 text-muted">
+                    {previewComposedPrompt}
+                  </pre>
                 </div>
-                <pre className="max-h-[220px] overflow-auto whitespace-pre-wrap rounded-lg border border-border/80 bg-[#050608] p-3 font-mono text-xs leading-5 text-muted">
-                  {previewComposedPrompt}
-                </pre>
               </div>
 
               {versionDraftMode ? (
-                <div className="mt-4 flex justify-end gap-2">
+                <div className="mt-4 flex shrink-0 justify-end gap-2 border-t border-border/80 pt-4">
                   <Button variant="ghost" onClick={discardPromptVersionDraft}>
                     Discard draft
                   </Button>
@@ -1639,7 +1643,7 @@ export function ExperimentDetailPage() {
                   </Button>
                 </div>
               ) : (
-                <div className="mt-4 flex justify-end">
+                <div className="mt-4 flex shrink-0 justify-end border-t border-border/80 pt-4">
                   <Button
                     onClick={() => void onSaveSelectedVersion()}
                     disabled={
