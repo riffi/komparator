@@ -2,7 +2,7 @@ docType: data-spec
 format_version: 0.0.1
 metadata:
   name: Komparator
-  version: 0.5.0
+  version: 0.5.1
   author: ""
   created_at: 2026-03-23
   updated_at: 2026-03-23
@@ -451,8 +451,10 @@ entities:
       Поддерживает несколько попыток (attempt) для одной и той же
       комбинации версия эксперимента + модель — для сравнения стабильности генерации.
       Содержит рейтинг (голосование) от пользователя.
-      При редактировании результат может быть перепривязан к другой локальной модели;
+      При редактировании результат может быть перепривязан к другой локальной модели
+      и/или к другой версии того же эксперимента;
       в этом случае attempt пересчитывается внутри новой пары experiment_version + llm_model,
+      snapshot полей prompt/wrapper переснимаются по новой experiment_version,
       а агрегаты stats пересобираются.
     fields:
       id:
@@ -893,10 +895,12 @@ behavior_rules:
     description: wrapper_version может быть удалена только если на неё не ссылается ни одна experiment_version. Удаление последней оставшейся версии внутри wrapper запрещено.
   - id: delete_model_guard
     description: Локальная модель может быть удалена только если ни один result не ссылается на неё.
-  - id: result_model_reassignment
-    description: При смене llm_model_id у существующего result система обязана пересчитать attempt внутри новой пары experiment_version_id + llm_model_id и затем обновить агрегаты stats.
+  - id: result_model_or_version_reassignment
+    description: При смене `llm_model_id` и/или `experiment_version_id` у существующего result система обязана пересчитать `attempt` внутри новой пары `experiment_version_id + llm_model_id`, переснять `composed_prompt_snapshot`, `prompt_text_snapshot` и snapshot полей wrapper по новой `experiment_version`, а затем обновить агрегаты stats.
   - id: result_prompt_snapshot
     description: При создании result система обязана сохранить `composed_prompt_snapshot`, `prompt_text_snapshot` и snapshot полей wrapper, чтобы запуск оставался воспроизводимым даже после будущих изменений в wrapper и UI.
+  - id: add_result_targets_selected_results_scope_version
+    description: "При создании result система обязана привязывать его ровно к той `experiment_version`, которая в данный момент выбрана в result-scope selector на вкладке Results. Выбор версии в Prompt & settings не должен неявно менять цель для Add result."
   - id: result_prompt_storage_restriction
     description: "Встроенная системная инструкция, добавляемая к prompt при создании result, должна явно запрещать зависимость от browser persistence APIs (`localStorage`, `sessionStorage` и аналогичных механизмов), потому что сохранённые результаты рендерятся в sandboxed iframe preview."
   - id: models_screen_scroll

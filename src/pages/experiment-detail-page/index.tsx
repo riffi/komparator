@@ -133,6 +133,7 @@ export function ExperimentDetailPage() {
     notes: "",
   });
   const [editResultDraft, setEditResultDraft] = useState({
+    experimentVersionId: "",
     modelId: "",
     htmlContent: "",
     notes: "",
@@ -307,6 +308,10 @@ export function ExperimentDetailPage() {
   const slotB = visibleResults.find((item) => item.id === slotBId) ?? visibleResults[1] ?? visibleResults[0];
   const activePrompt =
     workspace?.promptVersions.find((item) => item.id === selectedPromptVersionId) ?? workspace?.promptVersions[0];
+  const selectedResultsVersion =
+    resultsVersionFilterId && resultsVersionFilterId !== ALL_VERSIONS_FILTER
+      ? workspace?.promptVersions.find((item) => item.id === resultsVersionFilterId) ?? null
+      : null;
   const selectedDraftWrapper = wrapperOptions.find((option) => option.id === versionDraft.wrapperId);
   const selectedVersionWrapperLabel = selectedDraftWrapper?.label ?? "No wrapper";
   const hasResults = visibleResults.length > 0;
@@ -316,6 +321,9 @@ export function ExperimentDetailPage() {
   const canEditSelectedVersionNote = Boolean(activePrompt) && !versionDraftMode;
   const composedPrompt = activePrompt
     ? buildPromptForClipboard(activePrompt.promptText, activePrompt.wrapperTemplate)
+    : "";
+  const selectedResultsComposedPrompt = selectedResultsVersion
+    ? buildPromptForClipboard(selectedResultsVersion.promptText, selectedResultsVersion.wrapperTemplate)
     : "";
   const draftComposedPrompt = buildPromptForClipboard(
     versionDraft.promptText,
@@ -511,6 +519,7 @@ export function ExperimentDetailPage() {
   }, [catalogItems, modelLibraryTab, modelProviderFilter, modelSearch]);
 
   const selectedModel = modelOptions.find((option) => option.id === resultForm.modelId);
+  const selectedEditVersion = workspace?.promptVersions.find((option) => option.id === editResultDraft.experimentVersionId) ?? null;
   const selectedEditModel = modelOptions.find((option) => option.id === editResultDraft.modelId);
   const currentManagedModelId = modelManagerTarget === "edit" ? editResultDraft.modelId : resultForm.modelId;
   const selectedManagerModel =
@@ -548,12 +557,12 @@ export function ExperimentDetailPage() {
   }
 
   const copyPrompt = async () => {
-    if (!composedPrompt) {
+    if (!selectedResultsComposedPrompt) {
       return;
     }
 
     setCopyingPrompt(true);
-    await navigator.clipboard.writeText(composedPrompt);
+    await navigator.clipboard.writeText(selectedResultsComposedPrompt);
     window.setTimeout(() => setCopyingPrompt(false), 1600);
   };
 
@@ -594,6 +603,7 @@ export function ExperimentDetailPage() {
     const htmlContent = (await ensureResultHtml(result.id)) ?? "";
     setEditingResult(result);
     setEditResultDraft({
+      experimentVersionId: result.experimentVersionId,
       modelId: result.modelId,
       htmlContent,
       notes: result.notes,
@@ -603,7 +613,7 @@ export function ExperimentDetailPage() {
 
   const onSaveEditResult = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!editingResult) {
+    if (!workspace || !editingResult || !editResultDraft.experimentVersionId || !editResultDraft.modelId) {
       return;
     }
 
@@ -611,6 +621,7 @@ export function ExperimentDetailPage() {
     await updateResultEntry({
       resultId: editingResult.id,
       experimentId: workspace.id,
+      experimentVersionId: editResultDraft.experimentVersionId,
       modelId: editResultDraft.modelId,
       htmlContent: editResultDraft.htmlContent,
       notes: editResultDraft.notes,
@@ -620,6 +631,9 @@ export function ExperimentDetailPage() {
       [editingResult.id]: editResultDraft.htmlContent,
     }));
     await refreshWorkspace();
+    if (resultsVersionFilterId !== ALL_VERSIONS_FILTER) {
+      setResultsVersionFilterId(editResultDraft.experimentVersionId);
+    }
     setSelectedResultId(editingResult.id);
     setEditingResult(null);
     setSavingEditResult(false);
@@ -674,16 +688,14 @@ export function ExperimentDetailPage() {
   const onCreateResult = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    const canCreate = activePrompt && resultForm.htmlContent.trim() && resultForm.modelId;
-
-    if (!canCreate) {
+    if (!workspace || !selectedResultsVersion || !resultForm.htmlContent.trim() || !resultForm.modelId) {
       return;
     }
 
     setSavingResult(true);
     const nextResultId = await createResultEntry({
       experimentId: workspace.id,
-      experimentVersionId: activePrompt.id,
+      experimentVersionId: selectedResultsVersion.id,
       modelId: resultForm.modelId,
       htmlContent: resultForm.htmlContent,
       rating: null,
@@ -1153,7 +1165,7 @@ export function ExperimentDetailPage() {
               <div>
                 <div className="font-mono text-xs uppercase tracking-[0.12em] text-dim">Results</div>
                 <div className="mt-1 text-sm text-muted">
-                  {allVersionsSelected ? "All experiment versions" : `Experiment version v${activePrompt?.versionNumber ?? "-"}`}
+                  {allVersionsSelected ? "All experiment versions" : `Experiment version v${selectedResultsVersion?.versionNumber ?? "-"}`}
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -1282,7 +1294,7 @@ export function ExperimentDetailPage() {
                 <div className="rounded-lg border border-dashed border-border/80 bg-surface/30 px-4 py-6 text-sm text-muted">
                   {allVersionsSelected
                     ? "No results yet across any experiment version. Pick a concrete version in the toolbar to add a result."
-                    : `No results yet for experiment version v${activePrompt?.versionNumber ?? "-"}.`}
+                    : `No results yet for experiment version v${selectedResultsVersion?.versionNumber ?? "-"}.`}
                 </div>
               )}
             </div>
@@ -1428,17 +1440,21 @@ export function ExperimentDetailPage() {
                 <div className="w-full max-w-xl rounded-xl border border-dashed border-border/80 bg-surface/60 p-8 text-center shadow-panel">
                   <div className="font-mono text-xs uppercase tracking-[0.14em] text-dim">Empty results</div>
                   <h2 className="mt-3 font-mono text-2xl font-semibold text-text">
-                    No results for experiment version v{activePrompt?.versionNumber ?? "-"} yet
+                    {allVersionsSelected
+                      ? "No results across experiment versions yet"
+                      : `No results for experiment version v${selectedResultsVersion?.versionNumber ?? "-"} yet`}
                   </h2>
                   <p className="mt-3 text-sm leading-6 text-muted">
-                    Copy the prompt for the current version, run it in an external LLM chat, then add the generated HTML result here.
+                    {allVersionsSelected
+                      ? "Pick a concrete version in the toolbar, then copy its prompt and attach the generated HTML result."
+                      : "Copy the prompt for the current version, run it in an external LLM chat, then add the generated HTML result here."}
                   </p>
                   <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
-                    <Button variant="ghost" onClick={() => void copyPrompt()}>
+                    <Button variant="ghost" onClick={() => void copyPrompt()} disabled={allVersionsSelected}>
                       <Copy className="h-4 w-4" />
                       {copyingPrompt ? "Copied" : "Copy prompt"}
                     </Button>
-                    <Button onClick={() => setShowAddResult(true)}>
+                    <Button onClick={() => setShowAddResult(true)} disabled={allVersionsSelected}>
                       <Plus className="h-4 w-4" />
                       Add result
                     </Button>
@@ -1685,7 +1701,7 @@ export function ExperimentDetailPage() {
               <div>
                 <h2 className="font-mono text-xl font-semibold text-text">Add result</h2>
                 <p className="mt-1 text-sm text-muted">
-                  Attach HTML output to experiment version v{activePrompt?.versionNumber ?? "-"}.
+                  Attach HTML output to experiment version v{selectedResultsVersion?.versionNumber ?? "-"}.
                 </p>
               </div>
               <button
@@ -1708,11 +1724,11 @@ export function ExperimentDetailPage() {
                     <div className="mt-1 text-sm font-semibold text-text">Copy prompt</div>
                     <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted">
                       <span className="rounded-full bg-primary-soft/50 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-primary">
-                        v{activePrompt?.versionNumber ?? "-"}
+                        v{selectedResultsVersion?.versionNumber ?? "-"}
                       </span>
                       <span>
-                        {activePrompt?.wrapperVersionId
-                          ? `${activePrompt.wrapperName} v${activePrompt.wrapperVersionNumber ?? "?"}`
+                        {selectedResultsVersion?.wrapperVersionId
+                          ? `${selectedResultsVersion.wrapperName} v${selectedResultsVersion.wrapperVersionNumber ?? "?"}`
                           : "No wrapper"}
                       </span>
                     </div>
@@ -1726,7 +1742,7 @@ export function ExperimentDetailPage() {
                   Send this prompt to the LLM chat, then come back with the generated HTML.
                 </p>
                 <pre className="mt-3 max-h-[160px] overflow-auto whitespace-pre-wrap rounded-lg border border-border/80 bg-[#050608] p-3 font-mono text-xs leading-5 text-muted">
-                  {composedPrompt || "Select an experiment version first."}
+                  {selectedResultsComposedPrompt || "Select an experiment version first."}
                 </pre>
               </section>
 
@@ -1796,7 +1812,7 @@ export function ExperimentDetailPage() {
               <Button type="button" variant="ghost" onClick={() => setShowAddResult(false)}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={savingResult || !resultForm.modelId}>
+              <Button type="submit" disabled={savingResult || !resultForm.modelId || !selectedResultsVersion}>
                 Save result
               </Button>
             </div>
@@ -1824,6 +1840,35 @@ export function ExperimentDetailPage() {
               </button>
             </div>
             <div className="mt-5 space-y-4">
+              <div className="space-y-2">
+                <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Experiment version</div>
+                <div className="rounded-lg border border-border/80 bg-code px-3 py-3">
+                  <Select
+                    className="h-10"
+                    wrapperClassName="w-full"
+                    value={editResultDraft.experimentVersionId}
+                    onChange={(event) =>
+                      setEditResultDraft((current) => ({ ...current, experimentVersionId: event.target.value }))
+                    }
+                  >
+                    {workspace.promptVersions.map((version) => (
+                      <option key={version.id} value={version.id}>
+                        {`v${version.versionNumber} • ${version.resultCount} result${version.resultCount === 1 ? "" : "s"}`}
+                      </option>
+                    ))}
+                  </Select>
+                  <div className="mt-2 text-xs text-muted">
+                    {selectedEditVersion
+                      ? selectedEditVersion.wrapperVersionId
+                        ? `Wrapper: ${selectedEditVersion.wrapperName} v${selectedEditVersion.wrapperVersionNumber ?? "?"}`
+                        : "Wrapper: No wrapper"
+                      : "Choose the version this saved result belongs to."}
+                  </div>
+                </div>
+                <div className="text-xs text-muted">
+                  If you move the result to another version, its prompt and wrapper snapshots will be updated to that version and attempt will be recalculated in the new version+model pair.
+                </div>
+              </div>
               <div className="space-y-2">
                 <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Model</div>
                 <div className="flex items-center justify-between gap-3 rounded-lg border border-border/80 bg-code px-3 py-3">
@@ -1876,7 +1921,7 @@ export function ExperimentDetailPage() {
               <Button type="button" variant="ghost" onClick={() => setEditingResult(null)}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={savingEditResult}>
+              <Button type="submit" disabled={savingEditResult || !editResultDraft.experimentVersionId || !editResultDraft.modelId}>
                 <Save className="h-4 w-4" />
                 Save result
               </Button>

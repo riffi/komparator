@@ -1751,6 +1751,7 @@ export async function updateResultRating(resultId: string, rating: number | null
 export async function updateResultEntry(input: {
   resultId: string;
   experimentId: string;
+  experimentVersionId: string;
   modelId: string;
   htmlContent: string;
   notes: string;
@@ -1759,7 +1760,7 @@ export async function updateResultEntry(input: {
   const htmlContent = input.htmlContent.trim();
   const notes = input.notes.trim();
 
-  await db.transaction("rw", [db.results, db.models, db.experiments], async () => {
+  await db.transaction("rw", [db.results, db.models, db.experiments, db.experimentVersions, db.wrapperVersions, db.wrappers], async () => {
     const result = await db.results.get(input.resultId);
     if (!result) {
       throw new Error("Result no longer exists.");
@@ -1770,26 +1771,55 @@ export async function updateResultEntry(input: {
       throw new Error("Selected model no longer exists.");
     }
 
-    const previousModelId = result.modelId;
+    const nextExperimentVersion = await db.experimentVersions.get(input.experimentVersionId);
+    if (!nextExperimentVersion) {
+      throw new Error("Selected experiment version no longer exists.");
+    }
+
+    if (nextExperimentVersion.experimentId !== input.experimentId) {
+      throw new Error("Selected experiment version does not belong to this experiment.");
+    }
+
+    const nextWrapperVersion = nextExperimentVersion.wrapperVersionId
+      ? await db.wrapperVersions.get(nextExperimentVersion.wrapperVersionId)
+      : undefined;
+    const nextWrapper = nextWrapperVersion ? await db.wrappers.get(nextWrapperVersion.wrapperId) : undefined;
+    const nextComposedPromptSnapshot = buildPromptForClipboard(
+      nextExperimentVersion.promptText,
+      nextWrapperVersion?.template ?? null,
+    );
+
+    const versionChanged = result.experimentVersionId !== input.experimentVersionId;
+    const modelChanged = result.modelId !== input.modelId;
     let nextAttempt = result.attempt;
 
-    if (previousModelId !== input.modelId) {
+    if (versionChanged || modelChanged) {
       const previousAttempts = await db.results
         .where("[experimentVersionId+modelId+attempt]")
-        .between([result.experimentVersionId, input.modelId, Dexie.minKey], [result.experimentVersionId, input.modelId, Dexie.maxKey])
+        .between(
+          [input.experimentVersionId, input.modelId, Dexie.minKey],
+          [input.experimentVersionId, input.modelId, Dexie.maxKey],
+        )
         .toArray();
       nextAttempt = previousAttempts.filter((item) => item.id !== result.id).length + 1;
     }
 
     await db.results.update(input.resultId, {
+      experimentVersionId: input.experimentVersionId,
       modelId: input.modelId,
       attempt: nextAttempt,
+      composedPromptSnapshot: nextComposedPromptSnapshot,
+      promptTextSnapshot: nextExperimentVersion.promptText,
+      wrapperVersionId: nextExperimentVersion.wrapperVersionId,
+      wrapperNameSnapshot: nextWrapper?.name ?? null,
+      wrapperTemplateSnapshot: nextWrapperVersion?.template ?? null,
       htmlContent,
       notes,
       fileSizeBytes: new Blob([htmlContent]).size,
       lineCount: countLines(htmlContent),
     });
 
+    const previousModelId = result.modelId;
     const oldModelResults =
       previousModelId !== input.modelId ? await db.results.where("modelId").equals(previousModelId).toArray() : [];
     const newModelResults = await db.results.where("modelId").equals(input.modelId).toArray();
