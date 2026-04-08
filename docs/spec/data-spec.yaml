@@ -900,7 +900,7 @@ behavior_rules:
   - id: result_prompt_snapshot
     description: При создании result система обязана сохранить `composed_prompt_snapshot`, `prompt_text_snapshot` и snapshot полей wrapper, чтобы запуск оставался воспроизводимым даже после будущих изменений в wrapper и UI.
   - id: add_result_targets_selected_results_scope_version
-    description: "При создании result система обязана привязывать его ровно к той `experiment_version`, которая в данный момент выбрана в result-scope selector на вкладке Results. Выбор версии в Prompt & settings не должен неявно менять цель для Add result."
+    description: "При создании result система обязана использовать target-версию из result-scope selector на вкладке Results. Если в selector выбрана конкретная `experiment_version`, result привязывается к ней. Если выбран режим `All versions`, result должен создаваться в последней `experiment_version` этого эксперимента (с максимальным `version_number`). Выбор версии в Prompt & settings не должен неявно менять цель для Add result."
   - id: result_prompt_storage_restriction
     description: "Встроенная системная инструкция, добавляемая к prompt при создании result, должна явно запрещать зависимость от browser persistence APIs (`localStorage`, `sessionStorage` и аналогичных механизмов), потому что сохранённые результаты рендерятся в sandboxed iframe preview."
   - id: models_screen_scroll

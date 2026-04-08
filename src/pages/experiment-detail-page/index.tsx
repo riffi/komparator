@@ -313,6 +313,8 @@ export function ExperimentDetailPage() {
     resultsVersionFilterId && resultsVersionFilterId !== ALL_VERSIONS_FILTER
       ? workspace?.promptVersions.find((item) => item.id === resultsVersionFilterId) ?? null
       : null;
+  const latestPromptVersion = workspace?.promptVersions[0] ?? null;
+  const effectiveAddResultVersion = selectedResultsVersion ?? latestPromptVersion;
   const selectedDraftWrapper = wrapperOptions.find((option) => option.id === versionDraft.wrapperId);
   const selectedVersionWrapperLabel = selectedDraftWrapper?.label ?? "No wrapper";
   const hasResults = visibleResults.length > 0;
@@ -320,18 +322,9 @@ export function ExperimentDetailPage() {
   const selectedVersionHasResults = (activePrompt?.resultCount ?? 0) > 0;
   const canEditSelectedVersionFields = Boolean(activePrompt) && !versionDraftMode && !selectedVersionHasResults;
   const canEditSelectedVersionNote = Boolean(activePrompt) && !versionDraftMode;
-  const composedPrompt = activePrompt
-    ? buildPromptForClipboard(activePrompt.promptText, activePrompt.wrapperTemplate)
+  const selectedResultsComposedPrompt = effectiveAddResultVersion
+    ? buildPromptForClipboard(effectiveAddResultVersion.promptText, effectiveAddResultVersion.wrapperTemplate)
     : "";
-  const selectedResultsComposedPrompt = selectedResultsVersion
-    ? buildPromptForClipboard(selectedResultsVersion.promptText, selectedResultsVersion.wrapperTemplate)
-    : "";
-  const draftComposedPrompt = buildPromptForClipboard(
-    versionDraft.promptText,
-    versionDraft.wrapperId ? selectedDraftWrapper?.template ?? null : null,
-  );
-  const previewComposedPrompt =
-    versionDraftMode || canEditSelectedVersionFields ? draftComposedPrompt : composedPrompt;
 
   useEffect(() => {
     setNotesDraft(selectedResult?.notes ?? "");
@@ -689,14 +682,14 @@ export function ExperimentDetailPage() {
   const onCreateResult = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (!workspace || !selectedResultsVersion || !resultForm.htmlContent.trim() || !resultForm.modelId) {
+    if (!workspace || !effectiveAddResultVersion || !resultForm.htmlContent.trim() || !resultForm.modelId) {
       return;
     }
 
     setSavingResult(true);
     const nextResultId = await createResultEntry({
       experimentId: workspace.id,
-      experimentVersionId: selectedResultsVersion.id,
+      experimentVersionId: effectiveAddResultVersion.id,
       modelId: resultForm.modelId,
       htmlContent: resultForm.htmlContent,
       rating: null,
@@ -1163,7 +1156,7 @@ export function ExperimentDetailPage() {
                 </option>
               ))}
             </Select>
-            <Button size="sm" onClick={() => setShowAddResult(true)} disabled={allVersionsSelected}>
+            <Button size="sm" onClick={() => setShowAddResult(true)} disabled={!effectiveAddResultVersion}>
               <Plus className="h-4 w-4" />
               Add result
             </Button>
@@ -1459,15 +1452,15 @@ export function ExperimentDetailPage() {
                   </h2>
                   <p className="mt-3 text-sm leading-6 text-muted">
                     {allVersionsSelected
-                      ? "Pick a concrete version in the toolbar, then copy its prompt and attach the generated HTML result."
+                      ? `Add result will use the latest experiment version v${effectiveAddResultVersion?.versionNumber ?? "-"} while the list stays grouped by all versions.`
                       : "Copy the prompt for the current version, run it in an external LLM chat, then add the generated HTML result here."}
                   </p>
                   <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
-                    <Button variant="ghost" onClick={() => void copyPrompt()} disabled={allVersionsSelected}>
+                    <Button variant="ghost" onClick={() => void copyPrompt()} disabled={!selectedResultsComposedPrompt}>
                       <Copy className="h-4 w-4" />
                       {copyingPrompt ? "Copied" : "Copy prompt"}
                     </Button>
-                    <Button onClick={() => setShowAddResult(true)} disabled={allVersionsSelected}>
+                    <Button onClick={() => setShowAddResult(true)} disabled={!effectiveAddResultVersion}>
                       <Plus className="h-4 w-4" />
                       Add result
                     </Button>
@@ -1559,89 +1552,80 @@ export function ExperimentDetailPage() {
                 </div>
               </div>
 
-              <div className="mt-4 min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
-                <div className="min-h-0">
-                  <div className="mb-2 font-mono text-xs uppercase tracking-[0.12em] text-dim">Prompt text</div>
-                  <div className="grid h-[min(56vh,720px)] min-h-[320px] grid-cols-[52px_minmax(0,1fr)] overflow-hidden rounded-lg border border-border/80 bg-[#050608]">
-                    <div className="overflow-auto border-r border-border/80 bg-black/20 px-3 py-3 text-right font-mono text-xs leading-6 text-dim">
-                      {promptLineNumbers.map((line) => (
-                        <div key={line}>{line}</div>
-                      ))}
-                    </div>
+              <div className="mt-4 flex min-h-0 flex-1 flex-col overflow-hidden">
+                <div className="sticky top-0 z-10 -mx-4 border-b border-border/80 bg-code/95 px-4 pb-4 backdrop-blur supports-[backdrop-filter]:bg-code/80">
+                  <div className="grid gap-4 lg:grid-cols-2">
                     {versionDraftMode || canEditSelectedVersionFields ? (
-                      <textarea
-                        className="h-full min-h-0 w-full resize-none overflow-auto bg-transparent px-4 py-3 font-mono text-sm leading-6 text-text outline-none"
-                        value={versionDraft.promptText}
-                        onChange={(event) =>
-                          setVersionDraft((current) => ({ ...current, promptText: event.target.value }))
-                        }
-                      />
+                      <div>
+                        <div className="mb-1 font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Wrapper version</div>
+                        <button
+                          type="button"
+                          className="flex min-h-10 w-full items-center justify-between rounded-md border border-border/80 bg-code px-3 py-2 text-left text-sm text-text transition hover:border-primary/50"
+                          onClick={() => setShowWrapperPicker(true)}
+                        >
+                          <span className="min-w-0 truncate">{selectedVersionWrapperLabel}</span>
+                          <span className="shrink-0 text-xs text-dim">
+                            {versionDraft.wrapperId ? "Change" : "Choose"}
+                          </span>
+                        </button>
+                      </div>
                     ) : (
-                      <pre className="h-full min-h-0 overflow-auto whitespace-pre-wrap px-4 py-3 font-mono text-sm leading-6 text-text">
-                        {activePrompt?.promptText ?? ""}
-                      </pre>
+                      <div>
+                        <div className="mb-1 font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Wrapper</div>
+                        <div className="rounded-lg border border-border/80 bg-code px-3 py-2 text-sm text-muted">
+                          {activePrompt?.wrapperVersionId
+                            ? `${activePrompt.wrapperName} v${activePrompt.wrapperVersionNumber ?? "?"}`
+                            : "No wrapper"}
+                        </div>
+                      </div>
+                    )}
+
+                    {versionDraftMode || canEditSelectedVersionNote ? (
+                      <div className="space-y-2">
+                        <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Change note</div>
+                        <InputLike
+                          value={versionDraft.changeNote}
+                          onChange={(value) =>
+                            setVersionDraft((current) => ({ ...current, changeNote: value }))
+                          }
+                          placeholder="What changed from the previous version"
+                        />
+                      </div>
+                    ) : (
+                      <div>
+                        <div className="mb-1 font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Change note</div>
+                        <div className="rounded-lg border border-border/80 bg-code px-3 py-2 text-sm text-muted">
+                          {activePrompt?.changeNote || "No change note"}
+                        </div>
+                      </div>
                     )}
                   </div>
                 </div>
 
-                <div className="grid gap-4 lg:grid-cols-2">
-                  {versionDraftMode || canEditSelectedVersionFields ? (
-                    <div>
-                      <div className="mb-1 font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Wrapper version</div>
-                      <button
-                        type="button"
-                        className="flex min-h-10 w-full items-center justify-between rounded-md border border-border/80 bg-code px-3 py-2 text-left text-sm text-text transition hover:border-primary/50"
-                        onClick={() => setShowWrapperPicker(true)}
-                      >
-                        <span className="min-w-0 truncate">{selectedVersionWrapperLabel}</span>
-                        <span className="shrink-0 text-xs text-dim">
-                          {versionDraft.wrapperId ? "Change" : "Choose"}
-                        </span>
-                      </button>
-                    </div>
-                  ) : (
-                    <div>
-                      <div className="mb-1 font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Wrapper</div>
-                      <div className="rounded-lg border border-border/80 bg-code px-3 py-2 text-sm text-muted">
-                        {activePrompt?.wrapperVersionId
-                          ? `${activePrompt.wrapperName} v${activePrompt.wrapperVersionNumber ?? "?"}`
-                          : "No wrapper"}
+                <div className="min-h-0 flex-1 overflow-hidden pt-4 pr-1">
+                  <div className="flex h-full min-h-0 flex-col">
+                    <div className="mb-2 font-mono text-xs uppercase tracking-[0.12em] text-dim">Prompt text</div>
+                    <div className="grid h-full min-h-[320px] grid-cols-[52px_minmax(0,1fr)] overflow-hidden rounded-lg border border-border/80 bg-[#050608]">
+                      <div className="overflow-auto border-r border-border/80 bg-black/20 px-3 py-3 text-right font-mono text-xs leading-6 text-dim">
+                        {promptLineNumbers.map((line) => (
+                          <div key={line}>{line}</div>
+                        ))}
                       </div>
+                      {versionDraftMode || canEditSelectedVersionFields ? (
+                        <textarea
+                          className="h-full min-h-0 w-full resize-none overflow-auto bg-transparent px-4 py-3 font-mono text-sm leading-6 text-text outline-none"
+                          value={versionDraft.promptText}
+                          onChange={(event) =>
+                            setVersionDraft((current) => ({ ...current, promptText: event.target.value }))
+                          }
+                        />
+                      ) : (
+                        <pre className="h-full min-h-0 overflow-auto whitespace-pre-wrap px-4 py-3 font-mono text-sm leading-6 text-text">
+                          {activePrompt?.promptText ?? ""}
+                        </pre>
+                      )}
                     </div>
-                  )}
-
-                  {versionDraftMode || canEditSelectedVersionNote ? (
-                    <div className="space-y-2">
-                      <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Change note</div>
-                      <InputLike
-                        value={versionDraft.changeNote}
-                        onChange={(value) =>
-                          setVersionDraft((current) => ({ ...current, changeNote: value }))
-                        }
-                        placeholder="What changed from the previous version"
-                      />
-                    </div>
-                  ) : (
-                    <div>
-                      <div className="mb-1 font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Change note</div>
-                      <div className="rounded-lg border border-border/80 bg-code px-3 py-2 text-sm text-muted">
-                        {activePrompt?.changeNote || "No change note"}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <div className="mb-1 font-mono text-[11px] uppercase tracking-[0.12em] text-dim">
-                    {versionDraftMode
-                      ? "Draft composed prompt preview"
-                      : canEditSelectedVersionFields
-                        ? "Live composed prompt preview"
-                        : "Saved version composed prompt preview"}
                   </div>
-                  <pre className="max-h-[220px] overflow-auto whitespace-pre-wrap rounded-lg border border-border/80 bg-[#050608] p-3 font-mono text-xs leading-5 text-muted">
-                    {previewComposedPrompt}
-                  </pre>
                 </div>
               </div>
 
@@ -1718,7 +1702,7 @@ export function ExperimentDetailPage() {
               <div>
                 <h2 className="font-mono text-xl font-semibold text-text">Add result</h2>
                 <p className="mt-1 text-sm text-muted">
-                  Attach HTML output to experiment version v{selectedResultsVersion?.versionNumber ?? "-"}.
+                  Attach HTML output to experiment version v{effectiveAddResultVersion?.versionNumber ?? "-"}.
                 </p>
               </div>
               <button
@@ -1741,11 +1725,11 @@ export function ExperimentDetailPage() {
                     <div className="mt-1 text-sm font-semibold text-text">Copy prompt</div>
                     <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted">
                       <span className="rounded-full bg-primary-soft/50 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-primary">
-                        v{selectedResultsVersion?.versionNumber ?? "-"}
+                        v{effectiveAddResultVersion?.versionNumber ?? "-"}
                       </span>
                       <span>
-                        {selectedResultsVersion?.wrapperVersionId
-                          ? `${selectedResultsVersion.wrapperName} v${selectedResultsVersion.wrapperVersionNumber ?? "?"}`
+                        {effectiveAddResultVersion?.wrapperVersionId
+                          ? `${effectiveAddResultVersion.wrapperName} v${effectiveAddResultVersion.wrapperVersionNumber ?? "?"}`
                           : "No wrapper"}
                       </span>
                     </div>
