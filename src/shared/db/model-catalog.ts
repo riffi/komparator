@@ -26,7 +26,7 @@ export type CatalogImportPayload = {
 };
 
 export const builtInModelCatalog: CatalogImportPayload = {
-  version: "2026-03-23",
+  version: "2026-04-08",
   sourceLabel: "Built-in catalog fallback",
   providers: [
     { id: "catalog-provider-anthropic", canonicalSlug: "anthropic", name: "Anthropic", color: "#e8755a" },
@@ -37,6 +37,7 @@ export const builtInModelCatalog: CatalogImportPayload = {
     { id: "catalog-provider-moonshot", canonicalSlug: "moonshot", name: "Moonshot", color: "#f97316" },
     { id: "catalog-provider-meta", canonicalSlug: "meta", name: "Meta", color: "#a578e6" },
     { id: "catalog-provider-xai", canonicalSlug: "xai", name: "xAI", color: "#9a9ca0" },
+    { id: "catalog-provider-deepseek", canonicalSlug: "deepseek", name: "DeepSeek", color: "#4f7cff" },
     { id: "catalog-provider-mistral", canonicalSlug: "mistral", name: "Mistral", color: "#f59e0b" },
     { id: "catalog-provider-xiaomi", canonicalSlug: "xiaomi", name: "Xiaomi", color: "#fb923c" }
   ],
@@ -85,9 +86,9 @@ export const builtInModelCatalog: CatalogImportPayload = {
       id: "catalog-model-gpt-5-4-high-codex-harness",
       providerId: "catalog-provider-openai",
       name: "GPT",
-      version: "5.4 High (codex-harness)",
-      displayName: "GPT-5.4 High (codex-harness)",
-      aliases: ["gpt-5.4-high", "gpt-5.4-high (codex-harness)"]
+      version: "5.4 High",
+      displayName: "GPT-5.4 High",
+      aliases: ["gpt-5.4-high", "gpt 5.4 high"]
     },
     {
       id: "catalog-model-gemini-3-1-pro-preview",
@@ -112,6 +113,14 @@ export const builtInModelCatalog: CatalogImportPayload = {
       version: "5",
       displayName: "GLM-5",
       aliases: ["glm-5", "glm 5"]
+    },
+    {
+      id: "catalog-model-glm-5-turbo",
+      providerId: "catalog-provider-zai",
+      name: "GLM",
+      version: "5 Turbo",
+      displayName: "GLM-5 Turbo",
+      aliases: ["glm-5-turbo", "glm 5 turbo"]
     },
     {
       id: "catalog-model-glm-4-7",
@@ -149,9 +158,9 @@ export const builtInModelCatalog: CatalogImportPayload = {
       id: "catalog-model-gpt-5-4-medium-codex-harness",
       providerId: "catalog-provider-openai",
       name: "GPT",
-      version: "5.4 Medium (codex-harness)",
-      displayName: "GPT-5.4 Medium (codex-harness)",
-      aliases: ["gpt-5.4-medium", "gpt-5.4-medium (codex-harness)"]
+      version: "5.4 Medium",
+      displayName: "GPT-5.4 Medium",
+      aliases: ["gpt-5.4-medium", "gpt 5.4 medium"]
     },
     {
       id: "catalog-model-minimax-m2-5",
@@ -165,9 +174,9 @@ export const builtInModelCatalog: CatalogImportPayload = {
       id: "catalog-model-gpt-5-3-codex-codex-harness",
       providerId: "catalog-provider-openai",
       name: "GPT",
-      version: "5.3 Codex (codex-harness)",
-      displayName: "GPT-5.3 Codex (codex-harness)",
-      aliases: ["gpt-5.3-codex", "gpt-5.3-codex (codex-harness)"]
+      version: "5.3 Codex",
+      displayName: "GPT-5.3 Codex",
+      aliases: ["gpt-5.3-codex", "gpt 5.3 codex"]
     },
     {
       id: "catalog-model-kimi-k2-5-instant",
@@ -202,14 +211,6 @@ export const builtInModelCatalog: CatalogImportPayload = {
       aliases: ["gemini-3-flash (thinking-minimal)", "gemini 3 flash thinking minimal"]
     },
     {
-      id: "catalog-model-claude-sonnet-4",
-      providerId: "catalog-provider-anthropic",
-      name: "Claude",
-      version: "Sonnet 4",
-      displayName: "Claude Sonnet 4",
-      aliases: ["claude sonnet 4", "claude-sonnet-4"]
-    },
-    {
       id: "catalog-model-gpt-5-mini",
       providerId: "catalog-provider-openai",
       name: "GPT",
@@ -234,15 +235,6 @@ export const builtInModelCatalog: CatalogImportPayload = {
       aliases: ["gemini-2.5-flash", "gemini 2.5 flash"]
     },
     {
-      id: "catalog-model-gemini-1-5-pro",
-      providerId: "catalog-provider-google",
-      name: "Gemini",
-      version: "1.5 Pro",
-      displayName: "Gemini 1.5 Pro",
-      aliases: ["gemini-1.5-pro", "gemini 1.5 pro"],
-      status: "deprecated"
-    },
-    {
       id: "catalog-model-llama-3-1-405b",
       providerId: "catalog-provider-meta",
       name: "Llama",
@@ -251,12 +243,44 @@ export const builtInModelCatalog: CatalogImportPayload = {
       aliases: ["llama-3.1-405b", "llama 3.1 405b"]
     },
     {
-      id: "catalog-model-grok-2",
+      id: "catalog-model-grok-4-20-reasoning",
       providerId: "catalog-provider-xai",
       name: "Grok",
-      version: "2",
-      displayName: "Grok 2",
-      aliases: ["grok-2", "grok 2"]
+      version: "4.20 Reasoning",
+      displayName: "Grok 4.20 Reasoning",
+      aliases: ["grok-4.20-reasoning", "grok 4.20 reasoning", "grok-4.20", "grok 4.20"]
+    },
+    {
+      id: "catalog-model-grok-4-20-non-reasoning",
+      providerId: "catalog-provider-xai",
+      name: "Grok",
+      version: "4.20 Non-Reasoning",
+      displayName: "Grok 4.20 Non-Reasoning",
+      aliases: ["grok-4.20-non-reasoning", "grok 4.20 non reasoning", "grok-4.20 non-reasoning"]
+    },
+    {
+      id: "catalog-model-grok-4-1-fast-reasoning",
+      providerId: "catalog-provider-xai",
+      name: "Grok",
+      version: "4.1 Fast Reasoning",
+      displayName: "Grok 4.1 Fast Reasoning",
+      aliases: ["grok-4-1-fast-reasoning", "grok 4.1 fast reasoning", "grok-4.1-fast-reasoning"]
+    },
+    {
+      id: "catalog-model-grok-4-1-fast-non-reasoning",
+      providerId: "catalog-provider-xai",
+      name: "Grok",
+      version: "4.1 Fast Non-Reasoning",
+      displayName: "Grok 4.1 Fast Non-Reasoning",
+      aliases: ["grok-4-1-fast-non-reasoning", "grok 4.1 fast non reasoning", "grok-4.1-fast-non-reasoning"]
+    },
+    {
+      id: "catalog-model-deepseek-v3-2",
+      providerId: "catalog-provider-deepseek",
+      name: "DeepSeek",
+      version: "V3.2",
+      displayName: "DeepSeek V3.2",
+      aliases: ["deepseek-v3.2", "deepseek v3.2", "deepseek-chat", "deepseek-reasoner"]
     },
     {
       id: "catalog-model-mistral-large",
@@ -310,7 +334,6 @@ export const builtInModelCatalog: CatalogImportPayload = {
       modelIds: [
         "catalog-model-claude-opus-4-6",
         "catalog-model-claude-sonnet-4-6",
-        "catalog-model-claude-sonnet-4",
         "catalog-model-gpt-5-4-high-codex-harness",
         "catalog-model-gpt-5-2",
         "catalog-model-gpt-5-mini",

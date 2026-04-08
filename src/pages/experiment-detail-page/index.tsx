@@ -141,7 +141,8 @@ export function ExperimentDetailPage() {
   const [modelSearch, setModelSearch] = useState("");
   const [modelProviderFilter, setModelProviderFilter] = useState("all");
   const [modelSort, setModelSort] = useState<"recent" | "name">("recent");
-  const [modelLibraryTab, setModelLibraryTab] = useState<"popular" | "catalog" | "mine">("popular");
+  const [modelLibraryTab, setModelLibraryTab] = useState<"catalog" | "mine">("mine");
+  const [catalogPopularOnly, setCatalogPopularOnly] = useState(false);
   const [modelDraft, setModelDraft] = useState({
     providerMode: "existing",
     providerId: "",
@@ -505,7 +506,7 @@ export function ExperimentDetailPage() {
   const filteredCatalogItems = useMemo(() => {
     const search = modelSearch.trim().toLowerCase();
     const scoped = catalogItems.filter((item) => {
-      const matchesPreset = modelLibraryTab === "popular" ? item.presetIds.includes("popular") : true;
+      const matchesPreset = catalogPopularOnly ? item.presetIds.includes("popular") : true;
       const matchesProvider = modelProviderFilter === "all" ? true : item.providerName === modelProviderFilter;
       const matchesSearch = search
         ? [item.providerName, item.displayName, item.name, item.version, ...item.aliases].join(" ").toLowerCase().includes(search)
@@ -516,7 +517,7 @@ export function ExperimentDetailPage() {
     return scoped.sort((left, right) =>
       left.providerName.localeCompare(right.providerName) || left.displayName.localeCompare(right.displayName),
     );
-  }, [catalogItems, modelLibraryTab, modelProviderFilter, modelSearch]);
+  }, [catalogItems, catalogPopularOnly, modelProviderFilter, modelSearch]);
 
   const selectedModel = modelOptions.find((option) => option.id === resultForm.modelId);
   const selectedEditVersion = workspace?.promptVersions.find((option) => option.id === editResultDraft.experimentVersionId) ?? null;
@@ -908,7 +909,19 @@ export function ExperimentDetailPage() {
         setResultForm((current) => ({ ...current, modelId: loaded[0] }));
       }
     }
+    setModelLibraryTab("mine");
+    setCatalogPopularOnly(false);
     setSavingModel(false);
+  };
+
+  const openModelManager = (target: "add" | "edit") => {
+    setModelManagerTarget(target);
+    setModelLibraryTab("mine");
+    setCatalogPopularOnly(false);
+    setModelSearch("");
+    setModelProviderFilter("all");
+    setModelSort("recent");
+    setShowModelManager(true);
   };
 
   const startPromptVersionDraft = () => {
@@ -1745,9 +1758,14 @@ export function ExperimentDetailPage() {
                 <p className="mt-3 text-sm text-muted">
                   Send this prompt to the LLM chat, then come back with the generated HTML.
                 </p>
-                <pre className="mt-3 max-h-[160px] overflow-auto whitespace-pre-wrap rounded-lg border border-border/80 bg-[#050608] p-3 font-mono text-xs leading-5 text-muted">
-                  {selectedResultsComposedPrompt || "Select an experiment version first."}
-                </pre>
+                <details className="mt-3 rounded-lg border border-border/80 bg-[#050608] p-3">
+                  <summary className="cursor-pointer list-none text-xs font-medium uppercase tracking-[0.12em] text-dim">
+                    Prompt preview
+                  </summary>
+                  <pre className="mt-3 max-h-[160px] overflow-auto whitespace-pre-wrap font-mono text-xs leading-5 text-muted">
+                    {selectedResultsComposedPrompt || "Select an experiment version first."}
+                  </pre>
+                </details>
               </section>
 
               <section className="rounded-lg border border-border/80 bg-code p-4">
@@ -1764,10 +1782,7 @@ export function ExperimentDetailPage() {
                   <Button
                     type="button"
                     variant="ghost"
-                    onClick={() => {
-                      setModelManagerTarget("add");
-                      setShowModelManager(true);
-                    }}
+                    onClick={() => openModelManager("add")}
                   >
                     <Pencil className="h-4 w-4" />
                     Choose model
@@ -1887,10 +1902,7 @@ export function ExperimentDetailPage() {
                   <Button
                     type="button"
                     variant="ghost"
-                    onClick={() => {
-                      setModelManagerTarget("edit");
-                      setShowModelManager(true);
-                    }}
+                    onClick={() => openModelManager("edit")}
                   >
                     Change model
                   </Button>
@@ -1977,7 +1989,7 @@ export function ExperimentDetailPage() {
               <div>
                 <h3 className="font-mono text-xl font-semibold text-text">Choose model</h3>
                 <p className="mt-1 text-sm text-muted">
-                  Search the catalog, filter by provider and choose a model for this result.
+                  Pick one of your local models first, or open the catalog to import another model.
                 </p>
               </div>
               <button
@@ -1993,7 +2005,7 @@ export function ExperimentDetailPage() {
             <div className="mt-5 grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
               <div className="space-y-4">
                 <div className="flex flex-wrap items-center gap-2">
-                  {(["popular", "catalog", "mine"] as const).map((tab) => (
+                  {(["mine", "catalog"] as const).map((tab) => (
                     <button
                       key={tab}
                       type="button"
@@ -2003,18 +2015,30 @@ export function ExperimentDetailPage() {
                       )}
                       onClick={() => setModelLibraryTab(tab)}
                     >
-                      {tab === "popular" ? "Popular" : tab === "catalog" ? "Catalog" : "My models"}
+                      {tab === "catalog" ? "Catalog" : "My models"}
                     </button>
                   ))}
-                  {modelLibraryTab === "popular" ? (
+                  {modelLibraryTab === "catalog" ? (
                     <Button type="button" variant="ghost" onClick={() => void onLoadPopularPreset()} disabled={savingModel}>
                       <Plus className="h-4 w-4" />
-                      Load popular
+                      Import popular
                     </Button>
+                  ) : null}
+                  {modelLibraryTab === "catalog" ? (
+                    <button
+                      type="button"
+                      className={cn(
+                        "rounded-full border px-3 py-1.5 text-sm transition",
+                        catalogPopularOnly ? "border-primary bg-primary-soft/50 text-primary" : "border-border/80 text-muted",
+                      )}
+                      onClick={() => setCatalogPopularOnly((current) => !current)}
+                    >
+                      Popular only
+                    </button>
                   ) : null}
                 </div>
 
-                <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_160px]">
+                <div className={cn("grid gap-3", modelLibraryTab === "mine" ? "md:grid-cols-[minmax(0,1fr)_180px_160px]" : "md:grid-cols-[minmax(0,1fr)_220px]")}>
                   <InputLike value={modelSearch} onChange={setModelSearch} placeholder="Search models..." />
                   <Select
                     wrapperClassName="w-full"
@@ -2028,21 +2052,32 @@ export function ExperimentDetailPage() {
                       </option>
                     ))}
                   </Select>
-                  <Select
-                    wrapperClassName="w-full"
-                    value={modelSort}
-                    onChange={(event) => setModelSort(event.target.value as typeof modelSort)}
-                  >
-                    <option value="recent">Recent</option>
-                    <option value="name">Name</option>
-                  </Select>
+                  {modelLibraryTab === "mine" ? (
+                    <Select
+                      wrapperClassName="w-full"
+                      value={modelSort}
+                      onChange={(event) => setModelSort(event.target.value as typeof modelSort)}
+                    >
+                      <option value="recent">Recent</option>
+                      <option value="name">Name</option>
+                    </Select>
+                  ) : null}
                 </div>
 
                 <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
                   {modelLibraryTab === "mine" ? (
                     filteredModelOptions.length === 0 ? (
                       <div className="rounded-lg border border-dashed border-border/80 bg-surface/30 px-4 py-8 text-center text-sm text-muted">
-                        No models match the current filters.
+                        <div>No local models match the current filters.</div>
+                        <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+                          <Button type="button" variant="ghost" onClick={() => setModelLibraryTab("catalog")}>
+                            Open catalog
+                          </Button>
+                          <Button type="button" variant="ghost" onClick={() => void onLoadPopularPreset()} disabled={savingModel}>
+                            <Plus className="h-4 w-4" />
+                            Import popular
+                          </Button>
+                        </div>
                       </div>
                     ) : (
                       filteredModelOptions.map((option) => {
@@ -2280,7 +2315,7 @@ export function ExperimentDetailPage() {
                 ) : (
                   modelLibraryTab === "mine"
                     ? "Select a model from your local list or create a new one."
-                    : "Select a catalog model to add it to your local list and use it for this result."
+                    : "Select a catalog model to import it into your local list and use it for this result."
                 )}
               </div>
               <div className="flex items-center gap-2">

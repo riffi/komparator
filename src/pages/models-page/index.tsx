@@ -161,11 +161,6 @@ export function ModelsPage() {
     });
   }, [models, providerFilter, query, sortBy, sortDirection, sourceFilter]);
 
-  const popularCatalogItems = useMemo(
-    () => catalogItems.filter((item) => item.presetIds.includes("popular")).slice(0, 20),
-    [catalogItems],
-  );
-
   const onImportCatalogClick = () => {
     importInputRef.current?.click();
   };
@@ -472,14 +467,14 @@ export function ModelsPage() {
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
                   <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Models list</div>
-                  <div className="mt-1 text-sm text-muted">Models currently included in the `popular` catalog list.</div>
+                  <div className="mt-1 text-sm text-muted">All models currently available in the catalog.</div>
                 </div>
                 <div className="rounded-full border border-border/80 bg-surface/40 px-3 py-1 font-mono text-[11px] text-dim">
-                  {popularCatalogItems.length} models
+                  {catalogItems.length} models
                 </div>
               </div>
               <div className="max-h-[min(56vh,560px)] space-y-2 overflow-y-auto pr-1">
-                {popularCatalogItems.map((item) => (
+                {catalogItems.map((item) => (
                   <div key={item.id} className="flex items-center justify-between gap-3 rounded-lg border border-border/80 bg-surface/40 px-3 py-2">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 text-sm font-semibold text-text">

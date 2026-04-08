@@ -379,7 +379,7 @@ entities:
         required: true
       aliases:
         type: json
-        description: Массив альтернативных названий для дедупликации и поиска
+        description: Массив альтернативных названий для дедупликации и поиска, включая официальные API-идентификаторы провайдера (например, `deepseek-chat`, `deepseek-reasoner`)
       status:
         type: string
         description: "`active` или `deprecated`"
