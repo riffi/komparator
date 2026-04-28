@@ -26,7 +26,6 @@ import { cn } from "@/shared/lib/cn";
 import { buildPromptForClipboard } from "@/shared/lib/prompt";
 import { ratingToneClass } from "@/shared/lib/rating-color";
 import {
-  applyCatalogPreset,
   createModelFromCatalog,
   createPromptVersionEntry,
   createResultEntry,
@@ -142,7 +141,6 @@ export function ExperimentDetailPage() {
   const [modelProviderFilter, setModelProviderFilter] = useState("all");
   const [modelSort, setModelSort] = useState<"recent" | "name">("recent");
   const [modelLibraryTab, setModelLibraryTab] = useState<"catalog" | "mine">("mine");
-  const [catalogPopularOnly, setCatalogPopularOnly] = useState(false);
   const [modelDraft, setModelDraft] = useState({
     providerMode: "existing",
     providerId: "",
@@ -499,18 +497,17 @@ export function ExperimentDetailPage() {
   const filteredCatalogItems = useMemo(() => {
     const search = modelSearch.trim().toLowerCase();
     const scoped = catalogItems.filter((item) => {
-      const matchesPreset = catalogPopularOnly ? item.presetIds.includes("popular") : true;
       const matchesProvider = modelProviderFilter === "all" ? true : item.providerName === modelProviderFilter;
       const matchesSearch = search
         ? [item.providerName, item.displayName, item.name, item.version, ...item.aliases].join(" ").toLowerCase().includes(search)
         : true;
-      return matchesPreset && matchesProvider && matchesSearch;
+      return matchesProvider && matchesSearch;
     });
 
     return scoped.sort((left, right) =>
       left.providerName.localeCompare(right.providerName) || left.displayName.localeCompare(right.displayName),
     );
-  }, [catalogItems, catalogPopularOnly, modelProviderFilter, modelSearch]);
+  }, [catalogItems, modelProviderFilter, modelSearch]);
 
   const selectedModel = modelOptions.find((option) => option.id === resultForm.modelId);
   const selectedEditVersion = workspace?.promptVersions.find((option) => option.id === editResultDraft.experimentVersionId) ?? null;
@@ -884,33 +881,9 @@ export function ExperimentDetailPage() {
     setSavingModel(false);
   };
 
-  const onLoadPopularPreset = async () => {
-    setSavingModel(true);
-    const loaded = await applyCatalogPreset("popular");
-    const [nextModels, nextProviders, nextCatalogItems] = await Promise.all([
-      loadModelOptions(),
-      loadProvidersCatalog(),
-      loadCatalogBrowserItems(),
-    ]);
-    setModelOptions(nextModels);
-    setProvidersCatalog(nextProviders);
-    setCatalogItems(nextCatalogItems);
-    if (loaded[0]) {
-      if (modelManagerTarget === "edit") {
-        setEditResultDraft((current) => ({ ...current, modelId: loaded[0] }));
-      } else {
-        setResultForm((current) => ({ ...current, modelId: loaded[0] }));
-      }
-    }
-    setModelLibraryTab("mine");
-    setCatalogPopularOnly(false);
-    setSavingModel(false);
-  };
-
   const openModelManager = (target: "add" | "edit") => {
     setModelManagerTarget(target);
     setModelLibraryTab("mine");
-    setCatalogPopularOnly(false);
     setModelSearch("");
     setModelProviderFilter("all");
     setModelSort("recent");
@@ -2002,24 +1975,6 @@ export function ExperimentDetailPage() {
                       {tab === "catalog" ? "Catalog" : "My models"}
                     </button>
                   ))}
-                  {modelLibraryTab === "catalog" ? (
-                    <Button type="button" variant="ghost" onClick={() => void onLoadPopularPreset()} disabled={savingModel}>
-                      <Plus className="h-4 w-4" />
-                      Import popular
-                    </Button>
-                  ) : null}
-                  {modelLibraryTab === "catalog" ? (
-                    <button
-                      type="button"
-                      className={cn(
-                        "rounded-full border px-3 py-1.5 text-sm transition",
-                        catalogPopularOnly ? "border-primary bg-primary-soft/50 text-primary" : "border-border/80 text-muted",
-                      )}
-                      onClick={() => setCatalogPopularOnly((current) => !current)}
-                    >
-                      Popular only
-                    </button>
-                  ) : null}
                 </div>
 
                 <div className={cn("grid gap-3", modelLibraryTab === "mine" ? "md:grid-cols-[minmax(0,1fr)_180px_160px]" : "md:grid-cols-[minmax(0,1fr)_220px]")}>
@@ -2056,10 +2011,6 @@ export function ExperimentDetailPage() {
                         <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
                           <Button type="button" variant="ghost" onClick={() => setModelLibraryTab("catalog")}>
                             Open catalog
-                          </Button>
-                          <Button type="button" variant="ghost" onClick={() => void onLoadPopularPreset()} disabled={savingModel}>
-                            <Plus className="h-4 w-4" />
-                            Import popular
                           </Button>
                         </div>
                       </div>

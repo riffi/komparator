@@ -2,7 +2,6 @@ import Dexie from "dexie";
 import { db } from "@/shared/db/schema";
 import {
   CatalogModelRecord,
-  CatalogPresetRecord,
   CatalogProviderRecord,
   CatalogStateRecord,
   CatalogSummary,
@@ -23,7 +22,7 @@ import {
   WrapperVersionRecord,
 } from "@/entities/experiment/model/types";
 import { buildPromptForClipboard } from "@/shared/lib/prompt";
-import { builtInModelCatalog, CatalogImportPayload } from "@/shared/db/model-catalog";
+import { CatalogImportPayload } from "@/shared/db/model-catalog";
 
 const MODEL_CATALOG_URL = "/catalog/models.json";
 
@@ -97,14 +96,6 @@ export type ModelManagerItem = {
   pendingMatchCount: number;
 };
 
-export type CatalogPresetItem = {
-  id: string;
-  title: string;
-  description: string;
-  modelCount: number;
-  modelCountDelta: number;
-};
-
 export type CatalogModelBrowserItem = {
   id: string;
   providerName: string;
@@ -113,7 +104,6 @@ export type CatalogModelBrowserItem = {
   name: string;
   version: string;
   aliases: string[];
-  presetIds: string[];
   status: "active" | "deprecated";
   linkedLocalModelId: string | null;
   linkedLocalLabel: string | null;
@@ -320,11 +310,7 @@ export async function ensureCatalogReady() {
     return;
   }
 
-  try {
-    await syncRemoteCatalog();
-  } catch {
-    await importCatalogPayload(builtInModelCatalog);
-  }
+  await syncRemoteCatalog();
 }
 
 async function recomputeModelMatches() {
@@ -428,15 +414,12 @@ async function importCatalogPayload(payload: CatalogImportPayload) {
 
   await db.transaction(
     "rw",
-    [db.catalogState, db.catalogProviders, db.catalogModels, db.catalogPresets],
+    [db.catalogState, db.catalogProviders, db.catalogModels],
     async () => {
       const previousState = await db.catalogState.get("default");
-      const previousPresets = await db.catalogPresets.toArray();
-      const previousPresetCounts = new Map(previousPresets.map((preset) => [preset.id, preset.modelIds.length]));
 
       await db.catalogProviders.clear();
       await db.catalogModels.clear();
-      await db.catalogPresets.clear();
 
       const providerRows: CatalogProviderRecord[] = payload.providers.map((provider) => ({
         id: provider.id,
@@ -458,25 +441,12 @@ async function importCatalogPayload(payload: CatalogImportPayload) {
         createdAt: now,
         updatedAt: now,
       }));
-      const presetRows: CatalogPresetRecord[] = payload.presets.map((preset) => ({
-        id: preset.id,
-        title: preset.title,
-        description: preset.description,
-        modelIds: preset.modelIds,
-        createdAt: now,
-        updatedAt: now,
-      }));
-      const presetDiffs = payload.presets.map((preset) => ({
-        presetId: preset.id,
-        modelCountDelta: preset.modelIds.length - (previousPresetCounts.get(preset.id) ?? preset.modelIds.length),
-      }));
       const stateRow: CatalogStateRecord = {
         id: "default",
         version: payload.version,
         sourceLabel: payload.sourceLabel,
         importedAt: now,
         previousVersion: previousState?.version ?? null,
-        presetDiffs,
       };
 
       if (providerRows.length > 0) {
@@ -484,9 +454,6 @@ async function importCatalogPayload(payload: CatalogImportPayload) {
       }
       if (modelRows.length > 0) {
         await db.catalogModels.bulkAdd(modelRows);
-      }
-      if (presetRows.length > 0) {
-        await db.catalogPresets.bulkAdd(presetRows);
       }
       await db.catalogState.put(stateRow);
     },
@@ -505,8 +472,7 @@ function assertCatalogPayload(value: unknown): asserts value is CatalogImportPay
     typeof payload.version !== "string" ||
     typeof payload.sourceLabel !== "string" ||
     !Array.isArray(payload.providers) ||
-    !Array.isArray(payload.models) ||
-    !Array.isArray(payload.presets)
+    !Array.isArray(payload.models)
   ) {
     throw new Error("Invalid catalog payload.");
   }
@@ -673,8 +639,7 @@ export async function importCatalogFromJsonText(jsonText: string) {
     !payload ||
     typeof payload.version !== "string" ||
     !Array.isArray(payload.providers) ||
-    !Array.isArray(payload.models) ||
-    !Array.isArray(payload.presets)
+    !Array.isArray(payload.models)
   ) {
     throw new Error("Invalid catalog JSON.");
   }
@@ -685,11 +650,10 @@ export async function importCatalogFromJsonText(jsonText: string) {
 export async function loadCatalogSummary(): Promise<CatalogSummary> {
   await ensureCatalogReady();
 
-  const [state, providersCount, modelsCount, presetsCount, pendingMatches] = await Promise.all([
+  const [state, providersCount, modelsCount, pendingMatches] = await Promise.all([
     db.catalogState.get("default"),
     db.catalogProviders.count(),
     db.catalogModels.count(),
-    db.catalogPresets.count(),
     db.modelMatches.where("status").equals("pending").count(),
   ]);
 
@@ -699,25 +663,8 @@ export async function loadCatalogSummary(): Promise<CatalogSummary> {
     importedAt: state?.importedAt ?? null,
     providersCount,
     modelsCount,
-    presetsCount,
     matchesPendingCount: pendingMatches,
   };
-}
-
-export async function loadCatalogPresets(): Promise<CatalogPresetItem[]> {
-  await ensureCatalogReady();
-  const [presets, state] = await Promise.all([db.catalogPresets.toArray(), db.catalogState.get("default")]);
-  const presetDiffs = new Map((state?.presetDiffs ?? []).map((item) => [item.presetId, item.modelCountDelta]));
-
-  return presets
-    .sort((left, right) => left.title.localeCompare(right.title))
-    .map((preset) => ({
-      id: preset.id,
-      title: preset.title,
-      description: preset.description,
-      modelCount: preset.modelIds.length,
-      modelCountDelta: presetDiffs.get(preset.id) ?? 0,
-    }));
 }
 
 export async function createModelFromCatalog(catalogModelId: string) {
@@ -759,47 +706,21 @@ export async function createModelFromCatalog(catalogModelId: string) {
   return modelId;
 }
 
-export async function applyCatalogPreset(presetId: string) {
-  await ensureCatalogReady();
-  const preset = await db.catalogPresets.get(presetId);
-  if (!preset) {
-    throw new Error("Preset not found.");
-  }
-
-  const createdModelIds: string[] = [];
-  for (const modelId of preset.modelIds) {
-    createdModelIds.push(await createModelFromCatalog(modelId));
-  }
-
-  await recomputeModelMatches();
-  return createdModelIds;
-}
-
 export async function loadCatalogBrowserItems(): Promise<CatalogModelBrowserItem[]> {
   await ensureCatalogReady();
 
-  const [catalogModels, catalogProviders, localModels, localProviders, matches, presets] = await Promise.all([
+  const [catalogModels, catalogProviders, localModels, localProviders, matches] = await Promise.all([
     db.catalogModels.toArray(),
     db.catalogProviders.toArray(),
     db.models.toArray(),
     db.providers.toArray(),
     db.modelMatches.toArray(),
-    db.catalogPresets.toArray(),
   ]);
 
   const catalogProvidersById = new Map(catalogProviders.map((item) => [item.id, item]));
   const localProvidersById = new Map(localProviders.map((item) => [item.id, item]));
   const localModelsByCatalogId = new Map(localModels.filter((item) => item.catalogModelId).map((item) => [item.catalogModelId!, item]));
   const pendingMatchesByCatalogId = new Map(matches.filter((item) => item.status === "pending").map((item) => [item.catalogModelId, item]));
-  const presetIdsByModelId = new Map<string, string[]>();
-
-  for (const preset of presets) {
-    for (const modelId of preset.modelIds) {
-      const presetIds = presetIdsByModelId.get(modelId) ?? [];
-      presetIds.push(preset.id);
-      presetIdsByModelId.set(modelId, presetIds);
-    }
-  }
 
   return catalogModels
     .map((catalogModel) => {
@@ -820,7 +741,6 @@ export async function loadCatalogBrowserItems(): Promise<CatalogModelBrowserItem
         name: catalogModel.name,
         version: catalogModel.version,
         aliases: catalogModel.aliases,
-        presetIds: presetIdsByModelId.get(catalogModel.id) ?? [],
         status: catalogModel.status,
         linkedLocalModelId: linkedLocal?.id ?? null,
         linkedLocalLabel:

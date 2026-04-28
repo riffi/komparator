@@ -120,10 +120,6 @@ export type CatalogStateRecord = {
   sourceLabel: string;
   importedAt: string;
   previousVersion: string | null;
-  presetDiffs: Array<{
-    presetId: string;
-    modelCountDelta: number;
-  }>;
 };
 
 export type CatalogProviderRecord = {
@@ -144,15 +140,6 @@ export type CatalogModelRecord = {
   displayName: string;
   aliases: string[];
   status: "active" | "deprecated";
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type CatalogPresetRecord = {
-  id: string;
-  title: string;
-  description: string;
-  modelIds: string[];
   createdAt: string;
   updatedAt: string;
 };
@@ -278,6 +265,5 @@ export type CatalogSummary = {
   importedAt: string | null;
   providersCount: number;
   modelsCount: number;
-  presetsCount: number;
   matchesPendingCount: number;
 };

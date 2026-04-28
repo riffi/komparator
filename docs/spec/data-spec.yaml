@@ -31,7 +31,38 @@ description: |
   - Упрощённый стартовый create-flow для первого эксперимента
 
   Стек: SPA на Vercel, Dexie (IndexedDB), без бэкенда.
+enums:
+  app_locale:
+    description: Доступные языки встроенного интерфейса приложения
+    values:
+      - name: en
+        label: English
+        description: Английский язык интерфейса
+      - name: ru
+        label: Russian
+        description: Русский язык интерфейса
 entities:
+  app_settings:
+    label: Настройки приложения
+    description: |
+      Единичная singleton-сущность с глобальными пользовательскими настройками
+      интерфейса. Хранит только встроенные системные предпочтения приложения,
+      которые должны сохраняться локально и попадать в backup.
+    fields:
+      id:
+        type: string
+        pk: true
+        description: Фиксированное значение `app`
+      ui_locale:
+        type: app_locale
+        required: true
+        default: en
+        label: Язык интерфейса
+        description: |
+          Текущий язык встроенного интерфейса приложения. Влияет на навигацию,
+          onboarding, dialog labels, empty states, кнопки, системные сообщения,
+          а также на locale-aware форматирование дат/времени и относительных
+          меток времени. Не переводит пользовательские данные.
   category:
     label: Категория
     description: Тематическая группировка экспериментов (landing page, dashboard, game и т.д.)
@@ -313,7 +344,7 @@ entities:
     label: Состояние каталога
     description: |
       Служебная запись состояния внешнего каталога моделей.
-      Хранит текущую импортированную версию, прошлую версию и diff по пресетам.
+      Хранит текущую импортированную версию и прошлую версию.
     fields:
       id:
         type: string
@@ -328,9 +359,6 @@ entities:
         required: true
       previous_version:
         type: string
-      preset_diffs:
-        type: json
-        description: Массив изменений размера пресетов после последнего обновления каталога
   catalog_provider:
     label: Провайдер каталога
     description: Канонический provider из внешнего JSON-каталога.
@@ -383,29 +411,6 @@ entities:
       status:
         type: string
         description: "`active` или `deprecated`"
-      created_at:
-        type: datetime
-        required: true
-      updated_at:
-        type: datetime
-        required: true
-  catalog_preset:
-    label: Пресет каталога
-    description: |
-      Именованный набор моделей из каталога, например `popular` или `big-three`.
-      Используется для быстрого добавления моделей в локальный список.
-    fields:
-      id:
-        type: string
-        pk: true
-      title:
-        type: string
-        required: true
-      description:
-        type: string
-      model_ids:
-        type: json
-        description: Список идентификаторов catalog_model
       created_at:
         type: datetime
         required: true
@@ -680,9 +685,6 @@ indexes:
     - provider_catalog_id
     - display_name
     - status
-  catalog_preset:
-    - id
-    - title
   model_match:
     - id
     - catalog_model_id
@@ -875,6 +877,12 @@ read_models:
       rating_history:
         type: array
 behavior_rules:
+  - id: localized_system_ui
+    description: "Система должна поддерживать ровно два языка встроенного интерфейса: `en` и `ru`. Переключение языка применяется сразу без полной перезагрузки приложения."
+  - id: locale_preference_persisted
+    description: "Выбранный `app_settings.ui_locale` сохраняется в локальной базе, участвует в backup/export/import и восстанавливается после повторного открытия приложения."
+  - id: user_content_not_translated
+    description: "Локализация распространяется только на встроенный UI и системные метки. Пользовательские данные (`experiment.title`, `experiment.description`, `experiment_version.prompt_text`, `result.notes`, `category.name`, `wrapper.name`, `wrapper_version.template`, `provider.name`, `llm_model.name`, `llm_model.version`, `llm_model.comment`) не переводятся автоматически и отображаются как сохранены."
   - id: first_run_welcome
     description: При первом запуске приложения показывается onboarding overlay с кратким объяснением сценария и быстрым действием `Create experiment`. После закрытия повторно не показывается по умолчанию.
   - id: initial_experiment_minimal_flow

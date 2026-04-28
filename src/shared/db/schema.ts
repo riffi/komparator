@@ -1,7 +1,6 @@
 import Dexie, { type Table } from "dexie";
 import {
   CatalogModelRecord,
-  CatalogPresetRecord,
   CatalogProviderRecord,
   CatalogStateRecord,
   CategoryRecord,
@@ -32,7 +31,6 @@ export class KomparatorDb extends Dexie {
   catalogState!: Table<CatalogStateRecord, string>;
   catalogProviders!: Table<CatalogProviderRecord, string>;
   catalogModels!: Table<CatalogModelRecord, string>;
-  catalogPresets!: Table<CatalogPresetRecord, string>;
   modelMatches!: Table<ModelMatchRecord, string>;
   results!: Table<ResultRecord, string>;
   statsWorkspace!: Table<StatsWorkspaceRecord, string>;
@@ -255,7 +253,6 @@ export class KomparatorDb extends Dexie {
         catalogState: "id, version, importedAt",
         catalogProviders: "id, canonicalSlug, name, isActive",
         catalogModels: "id, providerCatalogId, displayName, status",
-        catalogPresets: "id, title",
         modelMatches: "id, catalogModelId, localModelId, status, [catalogModelId+localModelId]",
         results: "id, promptVersionId, modelId, [promptVersionId+modelId+attempt], createdAt, rating",
         statsWorkspace: "id, updatedAt",
@@ -279,7 +276,6 @@ export class KomparatorDb extends Dexie {
       catalogState: "id, version, importedAt",
       catalogProviders: "id, canonicalSlug, name, isActive",
       catalogModels: "id, providerCatalogId, displayName, status",
-      catalogPresets: "id, title",
       modelMatches: "id, catalogModelId, localModelId, status, [catalogModelId+localModelId]",
       results: "id, promptVersionId, modelId, [promptVersionId+modelId+attempt], createdAt, rating",
       statsWorkspace: "id, updatedAt",
@@ -300,7 +296,6 @@ export class KomparatorDb extends Dexie {
         catalogState: "id, version, importedAt",
         catalogProviders: "id, canonicalSlug, name, isActive",
         catalogModels: "id, providerCatalogId, displayName, status",
-        catalogPresets: "id, title",
         modelMatches: "id, catalogModelId, localModelId, status, [catalogModelId+localModelId]",
         results: "id, experimentVersionId, modelId, wrapperVersionId, [experimentVersionId+modelId+attempt], createdAt, rating",
         statsWorkspace: "id, updatedAt",
@@ -374,6 +369,25 @@ export class KomparatorDb extends Dexie {
           delete stats.promptVersionsCount;
         });
       });
+
+    this.version(9).stores({
+      categories: "id, name, sortOrder",
+      wrappers: "id, name, isDefault, updatedAt",
+      wrapperVersions: "id, wrapperId, [wrapperId+versionNumber], createdAt",
+      experiments: "id, title, categoryId, createdAt, updatedAt",
+      promptVersions: null,
+      experimentVersions: "id, experimentId, [experimentId+versionNumber], wrapperVersionId",
+      providers: "id, name, isActive",
+      models: "id, providerId, [providerId+name+version+comment], isActive, sourceType, catalogModelId, lastUsedAt",
+      catalogState: "id, version, importedAt",
+      catalogProviders: "id, canonicalSlug, name, isActive",
+      catalogModels: "id, providerCatalogId, displayName, status",
+      modelMatches: "id, catalogModelId, localModelId, status, [catalogModelId+localModelId]",
+      results: "id, experimentVersionId, modelId, wrapperVersionId, [experimentVersionId+modelId+attempt], createdAt, rating",
+      statsWorkspace: "id, updatedAt",
+      statsModels: "modelId, updatedAt",
+      statsProviders: "providerId, updatedAt",
+    });
   }
 }
 

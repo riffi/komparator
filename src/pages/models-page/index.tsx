@@ -2,16 +2,13 @@ import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useSta
 import { ArrowDown, ArrowUp, Copy, Download, Link2, Pencil, Plus, RefreshCcw, Search, Trash2, Upload, X } from "lucide-react";
 import { cn } from "@/shared/lib/cn";
 import {
-  applyCatalogPreset,
   CatalogModelBrowserItem,
-  CatalogPresetItem,
   createModelFromCatalog,
   createModelEntry,
   createProviderEntry,
   deleteModelEntry,
   importCatalogFromJsonText,
   loadCatalogBrowserItems,
-  loadCatalogPresets,
   loadCatalogSummary,
   loadModelsCatalog,
   loadModelMatches,
@@ -34,7 +31,6 @@ export function ModelsPage() {
   const [providers, setProviders] = useState<ProviderManagerItem[]>([]);
   const [models, setModels] = useState<ModelManagerItem[]>([]);
   const [catalogItems, setCatalogItems] = useState<CatalogModelBrowserItem[]>([]);
-  const [presets, setPresets] = useState<CatalogPresetItem[]>([]);
   const [matchItems, setMatchItems] = useState<ModelMatchItem[]>([]);
   const [catalogSummary, setCatalogSummary] = useState<{
     version: string | null;
@@ -42,7 +38,6 @@ export function ModelsPage() {
     importedAt: string | null;
     providersCount: number;
     modelsCount: number;
-    presetsCount: number;
     matchesPendingCount: number;
   } | null>(null);
   const [query, setQuery] = useState("");
@@ -55,7 +50,7 @@ export function ModelsPage() {
   const [savingProvider, setSavingProvider] = useState(false);
   const [savingModel, setSavingModel] = useState(false);
   const [deletingModel, setDeletingModel] = useState(false);
-  const [catalogBusy, setCatalogBusy] = useState<"" | "sync" | "preset" | "import" | "create" | "match">("");
+  const [catalogBusy, setCatalogBusy] = useState<"" | "sync" | "import" | "create" | "match">("");
   const [catalogError, setCatalogError] = useState("");
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const [duplicatingModelId, setDuplicatingModelId] = useState<string | null>(null);
@@ -77,18 +72,16 @@ export function ModelsPage() {
 
   const refreshData = useCallback(async () => {
     setLoading(true);
-    const [nextProviders, nextModels, nextCatalogSummary, nextPresets, nextCatalogItems, nextMatchItems] = await Promise.all([
+    const [nextProviders, nextModels, nextCatalogSummary, nextCatalogItems, nextMatchItems] = await Promise.all([
       loadProvidersCatalog(),
       loadModelsCatalog(),
       loadCatalogSummary(),
-      loadCatalogPresets(),
       loadCatalogBrowserItems(),
       loadModelMatches(),
     ]);
     setProviders(nextProviders);
     setModels(nextModels);
     setCatalogSummary(nextCatalogSummary);
-    setPresets(nextPresets);
     setCatalogItems(nextCatalogItems);
     setMatchItems(nextMatchItems);
     setLoading(false);
@@ -192,19 +185,6 @@ export function ModelsPage() {
       await refreshData();
     } catch (error) {
       setCatalogError(error instanceof Error ? error.message : "Catalog sync failed.");
-    } finally {
-      setCatalogBusy("");
-    }
-  };
-
-  const onApplyPreset = async (presetId: string) => {
-    setCatalogBusy("preset");
-    setCatalogError("");
-    try {
-      await applyCatalogPreset(presetId);
-      await refreshData();
-    } catch (error) {
-      setCatalogError(error instanceof Error ? error.message : "Preset apply failed.");
     } finally {
       setCatalogBusy("");
     }
@@ -438,9 +418,9 @@ export function ModelsPage() {
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <div className="font-mono text-xs uppercase tracking-[0.14em] text-dim">Catalog</div>
-              <h2 className="mt-2 text-lg font-semibold text-text">Remote model source and starter presets</h2>
+              <h2 className="mt-2 text-lg font-semibold text-text">Remote model source</h2>
               <p className="mt-1 text-sm text-muted">
-                Update the external catalog, inspect Arena-based presets, and add catalog models into your local workspace.
+                Update the external catalog and add catalog models into your local workspace.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -458,11 +438,10 @@ export function ModelsPage() {
           <div className="mt-4 grid gap-3 md:grid-cols-4">
             <CatalogStat label="Version" value={catalogSummary?.version ?? "—"} helper={catalogSummary?.sourceLabel ?? "No catalog"} />
             <CatalogStat label="Catalog models" value={String(catalogSummary?.modelsCount ?? 0)} helper={`${catalogSummary?.providersCount ?? 0} providers`} />
-            <CatalogStat label="Presets" value={String(catalogSummary?.presetsCount ?? 0)} helper="Starter bundles" />
             <CatalogStat label="Needs review" value={String(catalogSummary?.matchesPendingCount ?? 0)} helper="Possible duplicates" />
           </div>
 
-          <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+          <div className="mt-5">
             <div className="rounded-lg border border-border/80 bg-code/70 p-4">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
@@ -494,35 +473,6 @@ export function ModelsPage() {
                     >
                       {item.linkedLocalModelId ? "Added" : "Add"}
                     </Button>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="rounded-lg border border-border/80 bg-code/70 p-4">
-              <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-dim">Presets</div>
-              <div className="mt-1 text-sm text-muted">Load curated starter bundles into your local model list.</div>
-              <div className="mt-3 space-y-2">
-                {presets.map((preset) => (
-                  <div key={preset.id} className="rounded-lg border border-border/80 bg-surface/40 p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="text-sm font-semibold text-text">{preset.title}</div>
-                        <div className="mt-1 text-xs text-muted">{preset.description}</div>
-                        <div className="mt-1 flex items-center gap-2 font-mono text-[11px] text-dim">
-                          <span>{preset.modelCount} models</span>
-                          {preset.modelCountDelta !== 0 ? (
-                            <span className={cn("rounded-full px-2 py-0.5", preset.modelCountDelta > 0 ? "bg-emerald-500/10 text-emerald-300" : "bg-amber-500/10 text-amber-300")}>
-                              {preset.modelCountDelta > 0 ? `+${preset.modelCountDelta}` : preset.modelCountDelta}
-                            </span>
-                          ) : null}
-                        </div>
-                      </div>
-                      <Button type="button" variant="ghost" onClick={() => void onApplyPreset(preset.id)} disabled={catalogBusy !== ""}>
-                        <Download className="h-4 w-4" />
-                        Load
-                      </Button>
-                    </div>
                   </div>
                 ))}
               </div>
