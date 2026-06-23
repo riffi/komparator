@@ -5,7 +5,7 @@ metadata:
   version: 0.5.1
   author: ""
   created_at: 2026-03-23
-  updated_at: 2026-03-23
+  updated_at: 2026-06-23
   description_short: Side-by-side comparison tool for LLM-generated HTML outputs
 description: |
   Komparator — инструмент для сравнения результатов работы разных LLM-моделей
@@ -913,3 +913,5 @@ behavior_rules:
     description: "Встроенная системная инструкция, добавляемая к prompt при создании result, должна явно запрещать зависимость от browser persistence APIs (`localStorage`, `sessionStorage` и аналогичных механизмов), потому что сохранённые результаты рендерятся в sandboxed iframe preview."
   - id: models_screen_scroll
     description: На экране Models локальный список моделей и каталог должны скроллиться внутри своих панелей, а не раздувать всю страницу по высоте.
+  - id: public_model_catalog_current_entries
+    description: "Публичный каталог моделей должен включать активные записи `Qwen 3.7` для provider `Alibaba`, `GLM 5.2` для provider `Z.ai`, `MiniMax M3` для provider `MiniMax` и `Kimi K2.7` для provider `Moonshot` с алиасами для поиска через дефис и пробел. Legacy-записи `Gemini 2.*`, `Claude Opus 4.5*` и `DeepSeek V3.2` должны быть исключены из каталога."
